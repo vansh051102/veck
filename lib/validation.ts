@@ -1,0 +1,196 @@
+import { z } from 'zod'
+
+// ============================================================================
+// AUTH VALIDATION
+// ============================================================================
+
+export const SignUpSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  fullName: z.string().min(2, 'Full name is required'),
+  orgName: z.string().min(2, 'Organization name is required'),
+})
+
+export const SignInSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
+})
+
+export type SignUpInput = z.infer<typeof SignUpSchema>
+export type SignInInput = z.infer<typeof SignInSchema>
+
+// ============================================================================
+// CONTACT VALIDATION (Phase 1)
+// ============================================================================
+
+export const CreateContactSchema = z.object({
+  firstName: z.string().min(1, 'First name is required'),
+  lastName: z.string().min(1, 'Last name is required'),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().regex(/^\+?[0-9\-\s()]+$/, 'Invalid phone number'),
+  alternatePhone: z.string().regex(/^\+?[0-9\-\s()]+$/, 'Invalid phone number').optional(),
+  designation: z.string().optional(),
+  source: z.enum([
+    'Website',
+    'LinkedIn',
+    'Referral',
+    'Email',
+    'Phone',
+    'Other',
+  ]).default('Other'),
+  sourceDetails: z.record(z.any()).optional(),
+  tags: z.array(z.string()).default([]),
+})
+
+export const UpdateContactSchema = CreateContactSchema.partial()
+
+export type CreateContactInput = z.infer<typeof CreateContactSchema>
+export type UpdateContactInput = z.infer<typeof UpdateContactSchema>
+
+// ============================================================================
+// LEAD VALIDATION (Phase 1)
+// ============================================================================
+
+export const LEAD_STAGES = [
+  'New Lead',
+  'Contacted',
+  'Qualified',
+  'Quote Sent',
+  'Closed Won',
+  'Deal Lost',
+  'Disqualified',
+] as const
+
+export const LEAD_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'] as const
+
+export const CreateLeadSchema = z.object({
+  contactId: z.string().uuid('Invalid contact ID'),
+  companyName: z.string().min(1, 'Company name is required'),
+  priority: z.enum(LEAD_PRIORITIES).default('Medium'),
+  notes: z.string().optional(),
+  source: z.string().optional(),
+  sourceDetails: z.record(z.any()).optional(),
+  tags: z.array(z.string()).default([]),
+})
+
+export const UpdateLeadSchema = CreateLeadSchema.partial()
+
+export const UpdateLeadStageSchema = z.object({
+  stage: z.enum(LEAD_STAGES),
+  reason: z.string().optional(),
+})
+
+export const AssignLeadSchema = z.object({
+  assignedToId: z.string().uuid('Invalid user ID'),
+})
+
+export type CreateLeadInput = z.infer<typeof CreateLeadSchema>
+export type UpdateLeadInput = z.infer<typeof UpdateLeadSchema>
+export type UpdateLeadStageInput = z.infer<typeof UpdateLeadStageSchema>
+export type AssignLeadInput = z.infer<typeof AssignLeadSchema>
+
+// ============================================================================
+// ACTIVITY VALIDATION (Phase 1)
+// ============================================================================
+
+export const ACTIVITY_TYPES = ['call', 'email', 'note', 'meeting', 'task'] as const
+export const ACTIVITY_STATUSES = ['pending', 'completed', 'cancelled'] as const
+
+export const CreateActivitySchema = z.object({
+  type: z.enum(ACTIVITY_TYPES),
+  title: z.string().min(1, 'Title is required'),
+  description: z.string().optional(),
+  scheduledFor: z.date().optional(),
+  duration: z.number().positive().optional(),
+  status: z.enum(ACTIVITY_STATUSES).default('pending'),
+  metadata: z.record(z.any()).optional(),
+})
+
+export const UpdateActivitySchema = CreateActivitySchema.partial()
+
+export type CreateActivityInput = z.infer<typeof CreateActivitySchema>
+export type UpdateActivityInput = z.infer<typeof UpdateActivitySchema>
+
+// ============================================================================
+// CHECKLIST VALIDATION (Phase 1)
+// ============================================================================
+
+export const CreateChecklistSchema = z.object({
+  title: z.string().min(1, 'Title is required'),
+  description: z.string().optional(),
+  isRequired: z.boolean().default(false),
+  items: z
+    .array(
+      z.object({
+        title: z.string().min(1, 'Item title is required'),
+      })
+    )
+    .default([]),
+})
+
+export const UpdateChecklistSchema = CreateChecklistSchema.partial()
+
+export const ChecklistItemSchema = z.object({
+  completed: z.boolean(),
+})
+
+export type CreateChecklistInput = z.infer<typeof CreateChecklistSchema>
+export type UpdateChecklistInput = z.infer<typeof UpdateChecklistSchema>
+
+// ============================================================================
+// QUOTE VALIDATION (Phase 1)
+// ============================================================================
+
+export const CreateQuoteSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        productId: z.string().min(1, 'Product ID is required'),
+        quantity: z.number().positive('Quantity must be positive'),
+        price: z.number().positive('Price must be positive'),
+        discount: z.number().nonnegative('Discount cannot be negative').default(0),
+      })
+    )
+    .min(1, 'At least one item is required'),
+  validUntil: z.date().refine(d => d > new Date(), 'Validity date must be in the future'),
+  terms: z.string().optional(),
+  notes: z.string().optional(),
+})
+
+export const UpdateQuoteSchema = CreateQuoteSchema.partial()
+
+export const SendQuoteSchema = z.object({
+  recipientEmail: z.string().email('Invalid email'),
+  message: z.string().optional(),
+})
+
+export type CreateQuoteInput = z.infer<typeof CreateQuoteSchema>
+export type UpdateQuoteInput = z.infer<typeof UpdateQuoteSchema>
+export type SendQuoteInput = z.infer<typeof SendQuoteSchema>
+
+// ============================================================================
+// PURCHASE REQUEST VALIDATION (Phase 1)
+// ============================================================================
+
+export const CreatePurchaseRequestSchema = z.object({
+  productIds: z.array(z.string().min(1)).min(1, 'At least one product is required'),
+  estimatedQuantity: z.number().positive('Quantity must be positive'),
+  estimatedAmount: z.number().positive('Amount must be positive'),
+  notes: z.string().optional(),
+})
+
+export const UpdatePurchaseRequestSchema = CreatePurchaseRequestSchema.partial()
+
+export type CreatePurchaseRequestInput = z.infer<typeof CreatePurchaseRequestSchema>
+export type UpdatePurchaseRequestInput = z.infer<typeof UpdatePurchaseRequestSchema>
+
+// ============================================================================
+// PAGINATION VALIDATION
+// ============================================================================
+
+export const PaginationSchema = z.object({
+  page: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().positive()).default('1'),
+  limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().positive().max(100)).default('20'),
+})
+
+export type PaginationInput = z.infer<typeof PaginationSchema>
