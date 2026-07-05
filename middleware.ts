@@ -1,17 +1,27 @@
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { prisma } from './lib/db'
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = [
   '/auth/login',
   '/auth/signup',
   '/auth/forgot-password',
+  '/auth/inactive',
   '/api/v1/auth/signup',
   '/api/v1/auth/signin',
-  '/api/v1/auth/forgot-password',
+  // NOTE: password reset goes through Supabase directly from the
+  // /auth/forgot-password page - there is intentionally no API route for it.
   '/api/v1/health',
+  // Called by this middleware itself (see below) - must stay public to
+  // avoid infinite recursion through the middleware matcher.
+  '/api/internal/session',
+  // External webhooks - server-to-server, no user session exists. Each
+  // webhook route does its own auth (see e.g. INDIAMART_WEBHOOK_SECRET).
+  '/api/v1/webhooks',
+  // Scheduler endpoints - server-to-server, authenticated via CRON_SECRET
+  // inside the route handler itself.
+  '/api/v1/cron',
 ]
 
 // Admin-only routes
@@ -21,7 +31,8 @@ export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
 
-  // Get session
+  // Get session - this is a lightweight cookie/JWT check and is safe to run
+  // in the Edge Runtime that middleware executes in.
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -29,7 +40,7 @@ export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname
 
   // Allow public routes without authentication
-  if (PUBLIC_ROUTES.some(route => pathname.startsWith(route))) {
+  if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
     return res
   }
 
@@ -40,40 +51,51 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  // Get user from database
-  let user
+  // Resolve the Supabase session to our app's User row (org, role, status).
+  // NOTE: this can't be done with Prisma directly here - middleware runs in
+  // the Edge Runtime, and Prisma's query engine requires a Node.js process.
+  // Instead we call an internal Node.js API route over HTTP, which is the
+  // supported way to bridge Edge middleware to a database lookup.
+  let sessionData: { id: string; orgId: string; role: string; status: string } | null = null
   try {
-    user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      include: { org: true },
+    const sessionRes = await fetch(new URL('/api/internal/session', req.url), {
+      headers: { Authorization: `Bearer ${session.access_token}` },
     })
+    if (sessionRes.ok) {
+      sessionData = await sessionRes.json()
+    }
   } catch (error) {
-    console.error('Error fetching user:', error)
-    return NextResponse.redirect(new URL('/auth/login', req.url))
+    console.error('Error resolving session:', error)
   }
 
-  if (!user) {
+  if (!sessionData) {
     return NextResponse.redirect(new URL('/auth/login', req.url))
   }
 
   // Check if user is active
-  if (user.status !== 'active') {
+  if (sessionData.status !== 'active') {
     return NextResponse.redirect(new URL('/auth/inactive', req.url))
   }
 
   // Check admin access
-  if (ADMIN_ROUTES.some(route => pathname.startsWith(route))) {
-    if (user.role !== 'admin') {
+  if (ADMIN_ROUTES.some((route) => pathname.startsWith(route))) {
+    if (sessionData.role !== 'admin') {
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
   }
 
-  // Attach user info to headers for API routes
-  res.headers.set('x-user-id', user.id)
-  res.headers.set('x-org-id', user.orgId)
-  res.headers.set('x-user-role', user.role)
+  // Attach user info to the *request* headers so downstream route handlers
+  // can read them. Setting headers on `res` only affects the response sent
+  // to the browser - it does NOT forward anything to route handlers.
+  const requestHeaders = new Headers(req.headers)
+  requestHeaders.set('x-user-id', sessionData.id)
+  requestHeaders.set('x-org-id', sessionData.orgId)
+  requestHeaders.set('x-user-role', sessionData.role)
 
-  return res
+  const nextRes = NextResponse.next({ request: { headers: requestHeaders } })
+  // Preserve any cookies Supabase set on `res` (session refresh).
+  res.cookies.getAll().forEach((cookie) => nextRes.cookies.set(cookie))
+  return nextRes
 }
 
 export const config = {

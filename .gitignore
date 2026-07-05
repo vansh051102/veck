@@ -48,3 +48,8 @@ Thumbs.db
 # Cache
 .cache
 .turbo
+
+# Playwright & build artifacts
+playwright-report/
+test-results/
+tsconfig.tsbuildinfo

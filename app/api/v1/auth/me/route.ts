@@ -1,6 +1,4 @@
-import { getSessionUser } from '@/lib/auth'
-import { successResponse, errorResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
 
 export const GET = withErrorHandler(async (req) => {
   // Get session from request
@@ -8,8 +6,6 @@ export const GET = withErrorHandler(async (req) => {
   if (!authHeader?.startsWith('Bearer ')) {
     throw new UnauthorizedError('Missing or invalid authorization header')
   }
-
-  const token = authHeader.substring(7)
 
   // Get user from database using headers set by middleware
   const userId = req.headers.get('x-user-id')

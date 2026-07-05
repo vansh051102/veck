@@ -1,7 +1,7 @@
 import { healthCheck } from '@/lib/db'
-import { successResponse, errorResponse, withErrorHandler } from '@/lib/api-response'
+import { successResponse, withErrorHandler } from '@/lib/api-response'
 
-export const GET = withErrorHandler(async (req) => {
+export const GET = withErrorHandler(async () => {
   const health = await healthCheck()
 
   if (health.status === 'ok') {
@@ -14,8 +14,8 @@ export const GET = withErrorHandler(async (req) => {
 
   return successResponse(
     {
-      status: 'unhealthy',
       ...health,
+      status: 'unhealthy',
     },
     { statusCode: 503 }
   )

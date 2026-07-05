@@ -117,13 +117,16 @@ export async function refreshSession() {
 
 export async function checkPermission(userId: string, permission: string): Promise<boolean> {
   try {
+    const baseUser = await prisma.user.findUnique({ where: { id: userId } })
+    if (!baseUser) return false
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         org: {
           include: {
             roles: {
-              where: { name: user?.role },
+              where: { name: baseUser.role },
             },
           },
         },

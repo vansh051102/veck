@@ -1,5 +1,5 @@
 import { signIn } from '@/lib/auth'
-import { successResponse, errorResponse, withErrorHandler, ValidationError } from '@/lib/api-response'
+import { successResponse, withErrorHandler, ValidationError } from '@/lib/api-response'
 import { z } from 'zod'
 
 const SignInSchema = z.object({

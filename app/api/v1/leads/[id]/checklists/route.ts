@@ -1,0 +1,76 @@
+import { prisma } from '@/lib/db'
+import { logAudit } from '@/lib/auth'
+import { CreateChecklistSchema } from '@/lib/validation'
+import {
+  successResponse,
+  withErrorHandler,
+  UnauthorizedError,
+  NotFoundError,
+  ValidationError,
+  extractOrgAndUserIds,
+} from '@/lib/api-response'
+
+interface Params {
+  params: { id: string }
+}
+
+// POST /api/v1/leads/:id/checklists - Add a checklist to a lead
+// (Note: the NEW_LEAD checklist is auto-created on lead creation; this
+// endpoint is for adding stage-specific checklists, e.g. CONTACTED / QUALIFIED.)
+export const POST = withErrorHandler(async (req: Request, { params }: Params) => {
+  const ids = extractOrgAndUserIds(req.headers)
+  if (!ids) throw new UnauthorizedError('User context not found')
+  const { orgId, userId } = ids
+
+  const lead = await prisma.lead.findFirst({ where: { id: params.id, orgId } })
+  if (!lead) throw new NotFoundError('Lead')
+
+  const body = await req.json()
+  const parsed = CreateChecklistSchema.safeParse(body)
+  if (!parsed.success) {
+    throw new ValidationError('Invalid checklist data', parsed.error.flatten())
+  }
+  const input = parsed.data
+
+  const checklist = await prisma.checklist.create({
+    data: {
+      leadId: lead.id,
+      title: input.title,
+      description: input.description,
+      isRequired: input.isRequired,
+      items: { create: input.items.map((item) => ({ title: item.title })) },
+    },
+    include: { items: true },
+  })
+
+  await logAudit(orgId, userId, 'CREATE', 'Checklist', checklist.id, checklist.title)
+
+  return successResponse(checklist, { statusCode: 201 })
+})
+
+// GET /api/v1/leads/:id/checklists - Get checklists for a lead, with completion %
+export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
+  const ids = extractOrgAndUserIds(req.headers)
+  if (!ids) throw new UnauthorizedError('User context not found')
+  const { orgId } = ids
+
+  const lead = await prisma.lead.findFirst({ where: { id: params.id, orgId } })
+  if (!lead) throw new NotFoundError('Lead')
+
+  const checklists = await prisma.checklist.findMany({
+    where: { leadId: lead.id },
+    include: { items: true },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const withCompletion = checklists.map((checklist) => {
+    const total = checklist.items.length
+    const done = checklist.items.filter((i) => i.completed).length
+    return {
+      ...checklist,
+      completionPercent: total === 0 ? 0 : Math.round((done / total) * 100),
+    }
+  })
+
+  return successResponse(withCompletion)
+})

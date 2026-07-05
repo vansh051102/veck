@@ -141,6 +141,23 @@ model Settings {
 }
 
 // ============================================================================
+// DOCUMENT NUMBERING
+// ============================================================================
+// Atomic per-org, per-key counters for document numbers (QT-2026-001, ...).
+// Incremented via a single upsert with atomic increment, so concurrent
+// requests can never receive the same number.
+
+model OrgSequence {
+  id        String   @id @default(uuid())
+  orgId     String
+  key       String   // e.g. "QT-2026", "PR-2026"
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, key])
+}
+
+// ============================================================================
 // MASTER DATA
 // ============================================================================
 
@@ -230,6 +247,10 @@ model Lead {
   // Metadata
   source            String?
   sourceDetails     Json?
+  // Idempotency key for leads ingested from an external system (IndiaMART,
+  // TradeIndia, website form, etc.) - lets a webhook handler safely retry
+  // without creating duplicate leads for the same external event.
+  externalId        String?   @unique
   notes             String?
   customFields      Json?
   tags              String[]  @default([])
@@ -249,6 +270,7 @@ model Lead {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   createdById       String
+  createdBy         User      @relation("createdBy", fields: [createdById], references: [id])
 
   // Relations
   checklists        Checklist[]
@@ -263,6 +285,7 @@ model Lead {
   @@index([assignedToId])
   @@index([slaDeadline])
   @@index([createdAt])
+  @@index([createdById])
 }
 
 model Checklist {
@@ -472,6 +495,7 @@ model Product {
   suppliers         Supplier[]
   salesOrderItems   SalesOrderItem[]
   purchaseOrderItems PurchaseOrderItem[]
+  inventory         Inventory?
 
   @@index([orgId])
   @@index([active])

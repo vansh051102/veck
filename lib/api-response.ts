@@ -188,12 +188,12 @@ export function errorResponse(error: unknown) {
 // WRAPPER FOR API ROUTES
 // ============================================================================
 
-export function withErrorHandler(
-  handler: (req: Request) => Promise<NextResponse>
+export function withErrorHandler<Args extends unknown[]>(
+  handler: (req: Request, ...args: Args) => Promise<NextResponse>
 ) {
-  return async (req: Request) => {
+  return async (req: Request, ...args: Args) => {
     try {
-      return await handler(req)
+      return await handler(req, ...args)
     } catch (error) {
       return errorResponse(error)
     }
