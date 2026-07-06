@@ -41,14 +41,21 @@ export function getDaysUntil(date: Date | string): number {
   const d = typeof date === 'string' ? new Date(date) : date
   const now = new Date()
   const diff = d.getTime() - now.getTime()
-  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
 }
 
 export function getHoursUntil(date: Date | string): number {
   const d = typeof date === 'string' ? new Date(date) : date
   const now = new Date()
   const diff = d.getTime() - now.getTime()
-  return Math.ceil(diff / (1000 * 60 * 60))
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60)))
+}
+
+// Returns true if the SLA deadline has passed, regardless of the stored flag
+// (which only updates when the cron job runs).
+export function isSlaOverdue(slaDeadline: Date | string): boolean {
+  const d = typeof slaDeadline === 'string' ? new Date(slaDeadline) : slaDeadline
+  return d.getTime() < Date.now()
 }
 
 // ============================================================================

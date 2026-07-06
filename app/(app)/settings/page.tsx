@@ -9,6 +9,7 @@ import { useCurrentUser } from '@/lib/use-current-user'
 
 interface Settings {
   autoAssignmentEnabled: boolean
+  autoAssignmentRule: { rule_type: 'least_open_leads' | 'round_robin' } | null
   slaDefaultHours: number
   slaWarningHours: number
   emailNotificationsEnabled: boolean
@@ -62,7 +63,7 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>Lead assignment</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           <label className="flex items-center gap-3 text-sm">
             <input
               type="checkbox"
@@ -71,14 +72,37 @@ export default function SettingsPage() {
               onChange={(e) => update({ autoAssignmentEnabled: e.target.checked })}
               className="h-4 w-4 rounded border-border"
             />
-            <span>
-              <span className="font-medium">Auto-assign new leads</span>
-              <span className="block text-muted-foreground">
-                New leads go to the active user with the fewest open leads (capacity-based
-                round-robin).
-              </span>
-            </span>
+            <span className="font-medium">Auto-assign new leads</span>
           </label>
+
+          {settings.autoAssignmentEnabled && (
+            <div className="ml-7 flex flex-col gap-1.5">
+              <label htmlFor="assignment-rule" className="text-sm font-medium">
+                Assignment rule
+              </label>
+              <select
+                id="assignment-rule"
+                value={settings.autoAssignmentRule?.rule_type ?? 'least_open_leads'}
+                disabled={!isAdmin}
+                onChange={(e) =>
+                  update({
+                    autoAssignmentRule: {
+                      rule_type: e.target.value as 'least_open_leads' | 'round_robin',
+                    },
+                  })
+                }
+                className="h-9 w-64 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="least_open_leads">Least open leads (capacity-based)</option>
+                <option value="round_robin">Round-robin (sequential rotation)</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {settings.autoAssignmentRule?.rule_type === 'round_robin'
+                  ? 'Assigns to the next user in alphabetical order after the last assigned.'
+                  : 'Assigns to the active user with the fewest open leads.'}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

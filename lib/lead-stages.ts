@@ -40,3 +40,23 @@ export const DEAL_LOST_REASONS = [
 export function isValidDealLostReason(reason: string): boolean {
   return (DEAL_LOST_REASONS as readonly string[]).includes(reason)
 }
+
+// All 7 workflow stages in display order.
+export const ALL_STAGES = [
+  'New Lead',
+  'Contacted',
+  'Qualified',
+  'Quote Sent',
+  'Closed Won',
+  'Deal Lost',
+  'Disqualified',
+] as const
+
+// Returns the stage tab labels a given role should see in the leads list nav.
+// Purchase staff only handle the Qualified → Quote Sent part of the funnel.
+export function visibleStagesForRole(role: string): string[] {
+  if (role === 'purchase') {
+    return ['Qualified', 'Quote Sent']
+  }
+  return [...ALL_STAGES]
+}

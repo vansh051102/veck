@@ -100,6 +100,7 @@ export function LeadActivities({
 
   return (
     <div className="flex flex-col gap-4">
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <form onSubmit={handleAdd} className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
           <label htmlFor="activity-type" className="sr-only">
@@ -252,8 +253,6 @@ export function LeadActivities({
           </Button>
         </div>
       </form>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex flex-col gap-2">
         {activities.length === 0 && (

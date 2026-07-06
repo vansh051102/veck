@@ -14,7 +14,8 @@ import { Modal } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { NewLeadForm } from '@/components/new-lead-form'
 import { useCurrentUser } from '@/lib/use-current-user'
-import { LEAD_STAGES, LEAD_PRIORITIES } from '@/lib/validation'
+import { LEAD_PRIORITIES } from '@/lib/validation'
+import { visibleStagesForRole } from '@/lib/lead-stages'
 
 const DAY_FILTERS = [
   { label: 'All time', value: '' },
@@ -22,8 +23,6 @@ const DAY_FILTERS = [
   { label: '30d', value: '30' },
   { label: '90d', value: '90' },
 ]
-
-const STAGE_TABS = ['All', ...LEAD_STAGES] as const
 
 interface LeadStats {
   total: number
@@ -42,6 +41,10 @@ export default function LeadsPage() {
   const { toast } = useToast()
   const me = useCurrentUser()
 
+  const isAdmin = me?.role === 'admin'
+  const stageTabs = ['All', ...(me ? visibleStagesForRole(me.role) : visibleStagesForRole('admin'))]
+
+  const [initialized, setInitialized] = useState(false)
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [showNewLead, setShowNewLead] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -68,6 +71,42 @@ export default function LeadsPage() {
   const [bulkBusy, setBulkBusy] = useState(false)
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
+
+  // Read filter state from URL on first mount so back-navigation restores filters.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const p = params.get('page')
+    if (params.get('stage')) setStage(params.get('stage')!)
+    if (params.get('priority')) setPriority(params.get('priority')!)
+    if (params.get('days')) setDays(params.get('days')!)
+    if (params.get('from')) setFromDate(params.get('from')!)
+    if (params.get('to')) setToDate(params.get('to')!)
+    if (params.get('search')) setSearch(params.get('search')!)
+    if (params.get('sortBy')) setSortBy(params.get('sortBy') as SortBy)
+    if (params.get('sortDir')) setSortDir(params.get('sortDir') as SortDir)
+    if (params.get('view')) setView(params.get('view') as 'list' | 'kanban')
+    if (p && /^\d+$/.test(p)) setPage(Number(p))
+    setInitialized(true)
+  }, [])
+
+  // Sync filters back to URL whenever they change (only after initialization).
+  useEffect(() => {
+    if (!initialized) return
+    const params = new URLSearchParams()
+    if (stage) params.set('stage', stage)
+    if (priority) params.set('priority', priority)
+    if (days) params.set('days', days)
+    if (fromDate) params.set('from', fromDate)
+    if (toDate) params.set('to', toDate)
+    if (search) params.set('search', search)
+    if (page > 1) params.set('page', String(page))
+    if (sortBy !== 'createdAt') params.set('sortBy', sortBy)
+    if (sortDir !== 'desc') params.set('sortDir', sortDir)
+    if (view !== 'list') params.set('view', view)
+    const qs = params.toString()
+    router.replace(`/leads${qs ? `?${qs}` : ''}`, { scroll: false })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, priority, days, fromDate, toDate, search, page, sortBy, sortDir, view, initialized])
 
   useEffect(() => {
     api
@@ -215,14 +254,18 @@ export default function LeadsPage() {
               Kanban
             </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
-            <Upload className="h-4 w-4" />
-            Import
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExport}>
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+              <Upload className="h-4 w-4" />
+              Import
+            </Button>
+          )}
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={handleExport}>
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+          )}
           <Button size="sm" onClick={() => setShowNewLead(true)}>
             <Plus className="h-4 w-4" />
             New Lead
@@ -260,7 +303,7 @@ export default function LeadsPage() {
       {/* Stage tabs */}
       <div className="overflow-x-auto">
         <div className="flex min-w-max gap-1 border-b border-border" role="tablist" aria-label="Lead stages">
-          {STAGE_TABS.map((tab) => {
+          {stageTabs.map((tab) => {
             const value = tab === 'All' ? '' : tab
             const active = stage === value
             const count =

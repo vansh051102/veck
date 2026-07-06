@@ -9,6 +9,7 @@ import {
   UnauthorizedError,
   NotFoundError,
   ValidationError,
+  ConflictError,
   extractOrgAndUserIds,
   getPaginationParams,
 } from '@/lib/api-response'
@@ -31,6 +32,22 @@ export const POST = withErrorHandler(async (req) => {
     where: { id: input.contactId, orgId },
   })
   if (!contact) throw new NotFoundError('Contact')
+
+  // Block duplicate leads: if this contact already has an open (non-terminal)
+  // lead, surface the existing one instead of creating a second.
+  const existingLead = await prisma.lead.findFirst({
+    where: {
+      orgId,
+      contactId: input.contactId,
+      stage: { notIn: ['Closed Won', 'Deal Lost', 'Disqualified'] },
+    },
+    select: { id: true, companyName: true, stage: true },
+  })
+  if (existingLead) {
+    throw new ConflictError(
+      `An open lead for this contact already exists (${existingLead.companyName} — ${existingLead.stage}). Lead ID: ${existingLead.id}`
+    )
+  }
 
   const lead = await createLeadWithDefaults({
     orgId,

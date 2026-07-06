@@ -42,7 +42,6 @@ export function LeadQuotes({
 }: {
   leadId: string
   quotes: Quote[]
-  leadStage: string
   onChanged: () => void
 }) {
   const { toast } = useToast()
@@ -72,6 +71,11 @@ export function LeadQuotes({
     setError(null)
     setFieldErrors({})
     try {
+      // Parse the date input value (YYYY-MM-DD) as local midnight, not UTC
+      // midnight. Otherwise Indian users picking today's date get a past
+      // timestamp (UTC midnight is already behind IST).
+      const [y, m, d] = validUntil.split('-').map(Number)
+      const localMidnight = new Date(y, m - 1, d, 23, 59, 59)
       await api.post(`/leads/${leadId}/quotes`, {
         items: items.map((i) => ({
           productId: i.productId || 'unspecified',
@@ -79,7 +83,7 @@ export function LeadQuotes({
           price: Number(i.price),
           discount: Number(i.discount) || 0,
         })),
-        validUntil: new Date(validUntil).toISOString(),
+        validUntil: localMidnight.toISOString(),
       })
       setShowForm(false)
       setItems([emptyLineItem()])

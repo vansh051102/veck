@@ -214,6 +214,7 @@ model Contact {
   leads             Lead[]
 
   @@unique([orgId, email])
+  @@unique([orgId, phone])
   @@index([orgId])
   @@index([source])
 }

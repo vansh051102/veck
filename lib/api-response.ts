@@ -250,3 +250,7 @@ export function extractOrgAndUserIds(
 
   return { orgId, userId }
 }
+
+export function extractUserRole(headers: Headers): string | null {
+  return headers.get('x-user-role')
+}

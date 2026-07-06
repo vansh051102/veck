@@ -7,8 +7,10 @@ import {
   successResponse,
   withErrorHandler,
   UnauthorizedError,
+  ForbiddenError,
   ValidationError,
   extractOrgAndUserIds,
+  extractUserRole,
 } from '@/lib/api-response'
 
 const ImportRowSchema = z.object({
@@ -35,6 +37,9 @@ export const POST = withErrorHandler(async (req: Request) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+
+  const role = extractUserRole(req.headers)
+  if (role !== 'admin') throw new ForbiddenError('Only admins can import leads')
 
   const body = await req.json()
   const parsed = ImportSchema.safeParse(body)

@@ -13,6 +13,7 @@ import {
 
 const UpdateSettingsSchema = z.object({
   autoAssignmentEnabled: z.boolean().optional(),
+  autoAssignmentRule: z.object({ rule_type: z.enum(['least_open_leads', 'round_robin']) }).optional(),
   slaDefaultHours: z.number().int().positive().max(720).optional(),
   slaWarningHours: z.number().int().positive().max(720).optional(),
   emailNotificationsEnabled: z.boolean().optional(),

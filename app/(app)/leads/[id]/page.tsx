@@ -11,7 +11,7 @@ import { LeadActivities } from '@/components/lead-activities'
 import { LeadAssignControl } from '@/components/lead-assign-control'
 import { LeadQuotes } from '@/components/lead-quotes'
 import { LeadPurchaseRequests } from '@/components/lead-purchase-requests'
-import { formatDate } from '@/lib/utils'
+import { formatDate, isSlaOverdue } from '@/lib/utils'
 
 interface LeadDetail {
   id: string
@@ -87,9 +87,14 @@ export default function LeadDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="primary">{lead.stage}</Badge>
-          <Badge variant={lead.slaBreached ? 'destructive' : 'success'}>
-            {lead.slaBreached ? 'SLA Breached' : `SLA due ${formatDate(new Date(lead.slaDeadline))}`}
-          </Badge>
+          {(() => {
+            const breached = lead.slaBreached || isSlaOverdue(lead.slaDeadline)
+            return (
+              <Badge variant={breached ? 'destructive' : 'success'}>
+                {breached ? 'SLA Breached' : `SLA due ${formatDate(new Date(lead.slaDeadline))}`}
+              </Badge>
+            )
+          })()}
         </div>
       </div>
 
@@ -118,7 +123,7 @@ export default function LeadDetailPage() {
               <CardTitle>Quotes</CardTitle>
             </CardHeader>
             <CardContent>
-              <LeadQuotes leadId={lead.id} quotes={lead.quotes} leadStage={lead.stage} onChanged={load} />
+              <LeadQuotes leadId={lead.id} quotes={lead.quotes} onChanged={load} />
             </CardContent>
           </Card>
 
@@ -136,10 +141,12 @@ export default function LeadDetailPage() {
               <CardTitle>Timeline</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              {(lead.timeline?.events.length ?? 0) === 0 && (
+              {!lead.timeline?.events?.length && (
                 <p className="text-sm text-muted-foreground">No timeline events yet.</p>
               )}
-              {lead.timeline?.events.map((event) => (
+              {Array.from(
+                new Map(lead.timeline?.events.map((e) => [e.id, e])).values()
+              ).map((event) => (
                 <div key={event.id} className="flex items-start justify-between border-b border-border py-2 last:border-0">
                   <div>
                     <p className="text-sm font-medium">{event.title}</p>
