@@ -3,14 +3,13 @@ import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auth'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { LEAD_PRIORITIES } from '@/lib/validation'
+import { requirePermission, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
   UnauthorizedError,
-  ForbiddenError,
   ValidationError,
   extractOrgAndUserIds,
-  extractUserRole,
 } from '@/lib/api-response'
 
 const ImportRowSchema = z.object({
@@ -37,9 +36,7 @@ export const POST = withErrorHandler(async (req: Request) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
-
-  const role = extractUserRole(req.headers)
-  if (role !== 'admin') throw new ForbiddenError('Only admins can import leads')
+  await requirePermission(userId, PERMISSIONS.LEADS_IMPORT)
 
   const body = await req.json()
   const parsed = ImportSchema.safeParse(body)

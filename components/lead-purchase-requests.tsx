@@ -27,10 +27,12 @@ export function LeadPurchaseRequests({
   leadId,
   purchaseRequests,
   onChanged,
+  renderActions,
 }: {
   leadId: string
   purchaseRequests: PurchaseRequest[]
   onChanged: () => void
+  renderActions?: (onShow: () => void) => React.ReactNode
 }) {
   const [showForm, setShowForm] = useState(false)
   const [productIds, setProductIds] = useState('')
@@ -121,48 +123,52 @@ export function LeadPurchaseRequests({
 
       {showForm ? (
         <form onSubmit={handleCreate} className="flex flex-col gap-3 rounded-md border border-border p-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">Product IDs (comma-separated)</label>
-            <input
-              value={productIds}
-              onChange={(e) => setProductIds(e.target.value)}
-              placeholder="e.g. MS-PIPE-40, HR-COIL-2MM"
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium">Estimated quantity</label>
+              <label className="text-sm font-medium">Product IDs (comma-separated)</label>
               <input
-                type="number"
-                value={estimatedQuantity}
-                onChange={(e) => setEstimatedQuantity(e.target.value)}
+                value={productIds}
+                onChange={(e) => setProductIds(e.target.value)}
+                placeholder="e.g. MS-PIPE-40, HR-COIL-2MM"
                 className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium">Estimated amount</label>
-              <input
-                type="number"
-                value={estimatedAmount}
-                onChange={(e) => setEstimatedAmount(e.target.value)}
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium">Estimated quantity</label>
+                <input
+                  type="number"
+                  value={estimatedQuantity}
+                  onChange={(e) => setEstimatedQuantity(e.target.value)}
+                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium">Estimated amount</label>
+                <input
+                  type="number"
+                  value={estimatedAmount}
+                  onChange={(e) => setEstimatedAmount(e.target.value)}
+                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
             </div>
-          </div>
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={submitting}>
-              {submitting ? 'Creating…' : 'Create request'}
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+            <div className="flex gap-2">
+              <Button type="submit" size="sm" disabled={submitting}>
+                {submitting ? 'Creating…' : 'Create request'}
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
       ) : (
-        <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
-          New purchase request
-        </Button>
+        renderActions ? (
+          renderActions(() => setShowForm(true))
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
+            New purchase request
+          </Button>
+        )
       )}
     </div>
   )

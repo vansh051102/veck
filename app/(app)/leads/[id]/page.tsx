@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { api, ApiError } from '@/lib/api-client'
+import { useHasPermission } from '@/lib/use-current-user'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { PermissionGate } from '@/components/permission-gate'
 import { LeadStageControl } from '@/components/lead-stage-control'
 import { LeadChecklists } from '@/components/lead-checklists'
 import { LeadActivities } from '@/components/lead-activities'
@@ -53,6 +56,7 @@ interface LeadDetail {
 
 export default function LeadDetailPage() {
   const params = useParams<{ id: string }>()
+  const canCreateActivity = useHasPermission('activities:create')
   const [lead, setLead] = useState<LeadDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -103,7 +107,9 @@ export default function LeadDetailPage() {
           <CardTitle>Workflow</CardTitle>
         </CardHeader>
         <CardContent>
-          <LeadStageControl leadId={lead.id} currentStage={lead.stage} onChanged={load} />
+          <PermissionGate permission="leads:edit">
+            <LeadStageControl leadId={lead.id} currentStage={lead.stage} onChanged={load} />
+          </PermissionGate>
         </CardContent>
       </Card>
 
@@ -114,7 +120,12 @@ export default function LeadDetailPage() {
               <CardTitle>Activities</CardTitle>
             </CardHeader>
             <CardContent>
-              <LeadActivities leadId={lead.id} activities={lead.activities} onChanged={load} />
+              <LeadActivities
+                leadId={lead.id}
+                activities={lead.activities}
+                onChanged={load}
+                showCreateForm={canCreateActivity}
+              />
             </CardContent>
           </Card>
 
@@ -123,7 +134,18 @@ export default function LeadDetailPage() {
               <CardTitle>Quotes</CardTitle>
             </CardHeader>
             <CardContent>
-              <LeadQuotes leadId={lead.id} quotes={lead.quotes} onChanged={load} />
+              <LeadQuotes
+                leadId={lead.id}
+                quotes={lead.quotes}
+                onChanged={load}
+                renderActions={(onShow) => (
+                  <PermissionGate permission="quotes:create">
+                    <Button size="sm" variant="outline" onClick={onShow}>
+                      New quote
+                    </Button>
+                  </PermissionGate>
+                )}
+              />
             </CardContent>
           </Card>
 
@@ -132,7 +154,18 @@ export default function LeadDetailPage() {
               <CardTitle>Purchase Requests</CardTitle>
             </CardHeader>
             <CardContent>
-              <LeadPurchaseRequests leadId={lead.id} purchaseRequests={lead.purchaseRequests} onChanged={load} />
+              <LeadPurchaseRequests
+                leadId={lead.id}
+                purchaseRequests={lead.purchaseRequests}
+                onChanged={load}
+                renderActions={(onShow) => (
+                  <PermissionGate permission="purchase_requests:create">
+                    <Button size="sm" variant="outline" onClick={onShow}>
+                      New purchase request
+                    </Button>
+                  </PermissionGate>
+                )}
+              />
             </CardContent>
           </Card>
 
@@ -173,12 +206,14 @@ export default function LeadDetailPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Assigned to</span>
-                <LeadAssignControl
-                  leadId={lead.id}
-                  assignedToId={lead.assignedToId}
-                  assignedToName={lead.assignedTo?.fullName ?? null}
-                  onChanged={load}
-                />
+                <PermissionGate permission="leads:assign">
+                  <LeadAssignControl
+                    leadId={lead.id}
+                    assignedToId={lead.assignedToId}
+                    assignedToName={lead.assignedTo?.fullName ?? null}
+                    onChanged={load}
+                  />
+                </PermissionGate>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Created by</span>
@@ -202,7 +237,18 @@ export default function LeadDetailPage() {
               <CardTitle>Checklists</CardTitle>
             </CardHeader>
             <CardContent>
-              <LeadChecklists leadId={lead.id} checklists={lead.checklists} onChanged={load} />
+              <LeadChecklists
+                leadId={lead.id}
+                checklists={lead.checklists}
+                onChanged={load}
+                renderActions={(onShow) => (
+                  <PermissionGate permission="checklists:create">
+                    <Button size="sm" variant="outline" onClick={onShow}>
+                      New checklist
+                    </Button>
+                  </PermissionGate>
+                )}
+              />
             </CardContent>
           </Card>
         </div>

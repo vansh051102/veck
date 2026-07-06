@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auth'
 import { UpdatePurchaseRequestSchema } from '@/lib/validation'
+import { requirePermission, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
@@ -20,7 +21,8 @@ const PR_STATUSES = ['pending', 'sent_to_supplier', 'received', 'approved'] as c
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId } = ids
+  const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.PURCHASE_REQUESTS_READ)
 
   const pr = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId } })
   if (!pr) throw new NotFoundError('Purchase request')
@@ -33,6 +35,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.PURCHASE_REQUESTS_EDIT)
 
   const existing = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Purchase request')

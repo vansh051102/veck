@@ -6,6 +6,16 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { Button } from '@/components/ui/button'
 
+// Role-based default redirect paths
+const ROLE_DEFAULTS: Record<string, string> = {
+  admin: '/dashboard',
+  marketing_manager: '/leads',
+  marketing_executive: '/leads',
+  sales_manager: '/leads',
+  sales_executive: '/leads',
+  purchase: '/leads?stage=Qualified',
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -21,13 +31,42 @@ export default function LoginPage() {
 
     const { error: signInError } = await supabaseBrowser.auth.signInWithPassword({ email, password })
 
-    setLoading(false)
     if (signInError) {
+      setLoading(false)
       setError(signInError.message)
       return
     }
 
-    router.push(searchParams.get('redirectTo') || '/dashboard')
+    // Check for explicit redirect first
+    const redirectTo = searchParams.get('redirectTo')
+    if (redirectTo) {
+      router.push(redirectTo)
+      router.refresh()
+      return
+    }
+
+    // Fetch user role to determine redirect
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession()
+      if (session?.access_token) {
+        const res = await fetch('/api/v1/auth/me', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (res.ok) {
+          const { user } = await res.json()
+          const defaultPath = user.defaultDashboard || ROLE_DEFAULTS[user.role] || '/dashboard'
+          setLoading(false)
+          router.push(defaultPath)
+          router.refresh()
+          return
+        }
+      }
+    } catch {
+      // Fall through to default
+    }
+
+    setLoading(false)
+    router.push('/dashboard')
     router.refresh()
   }
 

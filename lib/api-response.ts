@@ -254,3 +254,13 @@ export function extractOrgAndUserIds(
 export function extractUserRole(headers: Headers): string | null {
   return headers.get('x-user-role')
 }
+
+export function extractUserDepartment(headers: Headers): string | null {
+  const dept = headers.get('x-user-department')
+  return dept || null
+}
+
+export function extractUserDesignation(headers: Headers): string | null {
+  const desig = headers.get('x-user-designation')
+  return desig || null
+}

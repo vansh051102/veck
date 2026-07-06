@@ -8,6 +8,9 @@ export interface CurrentUser {
   email: string
   fullName: string
   role: string
+  department: string | null
+  designation: string | null
+  permissions: string[]
 }
 
 interface MeResponse {
@@ -50,4 +53,25 @@ export function useCurrentUser(): CurrentUser | null {
   }, [])
 
   return user
+}
+
+/**
+ * Check if the current user has a specific permission.
+ * Returns false if user is not loaded yet.
+ */
+export function useHasPermission(permission: string): boolean {
+  const user = useCurrentUser()
+  if (!user) return false
+  if (user.permissions.includes('*')) return true
+  return user.permissions.includes(permission)
+}
+
+/**
+ * Check if the current user has ANY of the given permissions.
+ */
+export function useHasAnyPermission(permissions: string[]): boolean {
+  const user = useCurrentUser()
+  if (!user) return false
+  if (user.permissions.includes('*')) return true
+  return permissions.some((p) => user.permissions.includes(p))
 }

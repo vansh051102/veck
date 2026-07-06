@@ -1,4 +1,5 @@
 import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
+import { getUserPermissions } from '@/lib/rbac'
 
 export const GET = withErrorHandler(async (req) => {
   // Get session from request
@@ -35,15 +36,21 @@ export const GET = withErrorHandler(async (req) => {
     throw new UnauthorizedError('User not found')
   }
 
+  // Fetch permissions from the Role table
+  const permissions = await getUserPermissions(userId)
+
   return successResponse({
     user: {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       role: user.role,
+      department: user.department,
+      designation: user.designation,
       status: user.status,
       lastLogin: user.lastLogin,
       avatarUrl: user.avatarUrl,
+      permissions,
     },
     org: user.org,
   })

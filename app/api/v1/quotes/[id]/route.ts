@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auth'
 import { UpdateQuoteSchema } from '@/lib/validation'
+import { requirePermission, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
@@ -26,7 +27,8 @@ function calculateQuoteTotals(items: { quantity: number; price: number; discount
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId } = ids
+  const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.QUOTES_READ)
 
   const quote = await prisma.quote.findFirst({ where: { id: params.id, orgId } })
   if (!quote) throw new NotFoundError('Quote')
@@ -39,6 +41,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.QUOTES_EDIT)
 
   const existing = await prisma.quote.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Quote')

@@ -29,10 +29,12 @@ export function LeadActivities({
   leadId,
   activities,
   onChanged,
+  showCreateForm = true,
 }: {
   leadId: string
   activities: Activity[]
   onChanged: () => void
+  showCreateForm?: boolean
 }) {
   const { toast } = useToast()
   const [type, setType] = useState<ActivityType>('call')
@@ -101,7 +103,7 @@ export function LeadActivities({
   return (
     <div className="flex flex-col gap-4">
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <form onSubmit={handleAdd} className="flex flex-col gap-2">
+      {showCreateForm && <form onSubmit={handleAdd} className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
           <label htmlFor="activity-type" className="sr-only">
             Activity type
@@ -252,7 +254,8 @@ export function LeadActivities({
             {submitting ? 'Logging…' : 'Log activity'}
           </Button>
         </div>
-      </form>
+        </form>
+      }
 
       <div className="flex flex-col gap-2">
         {activities.length === 0 && (

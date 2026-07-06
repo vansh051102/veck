@@ -2,13 +2,12 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { toCsv } from '@/lib/csv'
 import { LEAD_STAGES, LEAD_PRIORITIES } from '@/lib/validation'
+import { requirePermission, PERMISSIONS } from '@/lib/rbac'
 import {
   withErrorHandler,
   UnauthorizedError,
-  ForbiddenError,
   ValidationError,
   extractOrgAndUserIds,
-  extractUserRole,
 } from '@/lib/api-response'
 
 const EXPORT_LIMIT = 5000
@@ -18,10 +17,8 @@ const EXPORT_LIMIT = 5000
 export const GET = withErrorHandler(async (req: Request) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId } = ids
-
-  const role = extractUserRole(req.headers)
-  if (role !== 'admin') throw new ForbiddenError('Only admins can export leads')
+  const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.LEADS_EXPORT)
 
   const url = new URL(req.url)
   const stage = url.searchParams.get('stage')

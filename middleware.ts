@@ -56,7 +56,7 @@ export async function middleware(req: NextRequest) {
   // the Edge Runtime, and Prisma's query engine requires a Node.js process.
   // Instead we call an internal Node.js API route over HTTP, which is the
   // supported way to bridge Edge middleware to a database lookup.
-  let sessionData: { id: string; orgId: string; role: string; status: string } | null = null
+  let sessionData: { id: string; orgId: string; role: string; status: string; department: string | null; designation: string | null } | null = null
   try {
     const sessionRes = await fetch(new URL('/api/internal/session', req.url), {
       headers: { Authorization: `Bearer ${session.access_token}` },
@@ -91,6 +91,8 @@ export async function middleware(req: NextRequest) {
   requestHeaders.set('x-user-id', sessionData.id)
   requestHeaders.set('x-org-id', sessionData.orgId)
   requestHeaders.set('x-user-role', sessionData.role)
+  requestHeaders.set('x-user-department', sessionData.department ?? '')
+  requestHeaders.set('x-user-designation', sessionData.designation ?? '')
 
   const nextRes = NextResponse.next({ request: { headers: requestHeaders } })
   // Preserve any cookies Supabase set on `res` (session refresh).

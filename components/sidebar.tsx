@@ -4,21 +4,38 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { BarChart2, LayoutDashboard, Users, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useCurrentUser } from '@/lib/use-current-user'
 
-const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/leads', label: 'Leads', icon: Users },
-  { href: '/analytics', label: 'Analytics', icon: BarChart2 },
-  { href: '/settings', label: 'Settings', icon: Settings },
+interface NavItem {
+  href: string
+  label: string
+  icon: typeof LayoutDashboard
+  permissions: string[] // empty = everyone can see
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permissions: [] },
+  { href: '/leads', label: 'Leads', icon: Users, permissions: ['leads:read'] },
+  { href: '/analytics', label: 'Analytics', icon: BarChart2, permissions: ['analytics:read'] },
+  { href: '/settings', label: 'Settings', icon: Settings, permissions: ['settings:edit'] },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
+  const user = useCurrentUser()
+
+  // Filter nav items based on user permissions
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.permissions.length === 0) return true
+    if (!user) return false
+    if (user.permissions.includes('*')) return true
+    return item.permissions.some((p) => user.permissions.includes(p))
+  })
 
   return (
     <nav className="flex h-full flex-col gap-1 border-r border-border bg-card p-3">
       <div className="mb-4 px-2 py-2 text-lg font-semibold">VECK</div>
-      {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+      {visibleItems.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || pathname?.startsWith(href + '/')
         return (
           <Link

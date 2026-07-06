@@ -1,10 +1,12 @@
 import { prisma } from '@/lib/db'
+import { requirePermission, PERMISSIONS, buildOwnershipFilter } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
   UnauthorizedError,
   extractOrgAndUserIds,
   extractUserRole,
+  extractUserDepartment,
 } from '@/lib/api-response'
 
 // GET /api/v1/analytics - Aggregated KPIs, stage distribution, per-salesperson
@@ -14,12 +16,14 @@ export const GET = withErrorHandler(async (req: Request) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.ANALYTICS_READ)
   const role = extractUserRole(req.headers) ?? 'user'
+  const department = extractUserDepartment(req.headers)
 
-  const isSelf = role !== 'admin' && role !== 'manager'
+  const ownershipFilter = buildOwnershipFilter(userId, role, department, 'leads')
   const leadsWhere = {
     orgId,
-    ...(isSelf && { assignedToId: userId }),
+    ...ownershipFilter,
   }
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -53,19 +57,15 @@ export const GET = withErrorHandler(async (req: Request) => {
       where: {
         orgId,
         createdAt: { gte: thirtyDaysAgo },
-        ...(isSelf && { createdBy: userId }),
+        ...buildOwnershipFilter(userId, role, department, 'activities'),
       },
       select: { type: true, createdAt: true },
     }),
   ])
 
   // Per-salesperson stats
-  const salespeople = isSelf
-    ? orgUsers.filter((u) => u.id === userId)
-    : orgUsers
-
   const salespersonStats = await Promise.all(
-    salespeople.map(async (user) => {
+    orgUsers.map(async (user) => {
       const [assigned, won, activities] = await Promise.all([
         prisma.lead.count({ where: { orgId, assignedToId: user.id } }),
         prisma.lead.count({ where: { orgId, assignedToId: user.id, stage: 'Closed Won' } }),

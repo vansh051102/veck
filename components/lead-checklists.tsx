@@ -24,10 +24,12 @@ export function LeadChecklists({
   leadId,
   checklists,
   onChanged,
+  renderActions,
 }: {
   leadId: string
   checklists: Checklist[]
   onChanged: () => void
+  renderActions?: (onShow: () => void) => React.ReactNode
 }) {
   const { toast } = useToast()
   const [pendingItemId, setPendingItemId] = useState<string | null>(null)
@@ -138,57 +140,61 @@ export function LeadChecklists({
 
       {showForm ? (
         <form onSubmit={handleCreate} className="flex flex-col gap-3 rounded-md border border-border p-3">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="checklist-title" className="text-sm font-medium">
-              Title
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="checklist-title" className="text-sm font-medium">
+                Title
+              </label>
+              <input
+                id="checklist-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+              />
+              {fieldErrors.title && <p className="text-xs text-destructive">{fieldErrors.title}</p>}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="checklist-items" className="text-sm font-medium">
+                Items (one per line)
+              </label>
+              <textarea
+                id="checklist-items"
+                value={itemsText}
+                onChange={(e) => setItemsText(e.target.value)}
+                rows={4}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+              />
+              {fieldErrors.items && <p className="text-xs text-destructive">{fieldErrors.items}</p>}
+            </div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isRequired}
+                onChange={(e) => setIsRequired(e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              Required — blocks stage progression until complete
             </label>
-            <input
-              id="checklist-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-            />
-            {fieldErrors.title && <p className="text-xs text-destructive">{fieldErrors.title}</p>}
-          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="checklist-items" className="text-sm font-medium">
-              Items (one per line)
-            </label>
-            <textarea
-              id="checklist-items"
-              value={itemsText}
-              onChange={(e) => setItemsText(e.target.value)}
-              rows={4}
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-            />
-            {fieldErrors.items && <p className="text-xs text-destructive">{fieldErrors.items}</p>}
-          </div>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isRequired}
-              onChange={(e) => setIsRequired(e.target.checked)}
-              className="h-4 w-4 rounded border-border"
-            />
-            Required — blocks stage progression until complete
-          </label>
-
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={submitting || !title.trim()}>
-              {submitting ? 'Creating…' : 'Create checklist'}
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+            <div className="flex gap-2">
+              <Button type="submit" size="sm" disabled={submitting || !title.trim()}>
+                {submitting ? 'Creating…' : 'Create checklist'}
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
       ) : (
-        <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
-          New checklist
-        </Button>
+        renderActions ? (
+          renderActions(() => setShowForm(true))
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
+            New checklist
+          </Button>
+        )
       )}
     </div>
   )

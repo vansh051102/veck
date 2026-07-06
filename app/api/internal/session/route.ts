@@ -35,5 +35,7 @@ export async function GET(req: Request) {
     orgId: user.orgId,
     role: user.role,
     status: user.status,
+    department: user.department,
+    designation: user.designation,
   })
 }

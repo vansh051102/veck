@@ -11,14 +11,18 @@ import {
   ValidationError,
   ConflictError,
   extractOrgAndUserIds,
+  extractUserRole,
+  extractUserDepartment,
   getPaginationParams,
 } from '@/lib/api-response'
+import { requirePermission, buildOwnershipFilter, PERMISSIONS } from '@/lib/rbac'
 
 // POST /api/v1/leads - Create a lead (Step 1 of the workflow)
 export const POST = withErrorHandler(async (req) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.LEADS_CREATE)
 
   const body = await req.json()
   const parsed = CreateLeadSchema.safeParse(body)
@@ -70,7 +74,11 @@ export const POST = withErrorHandler(async (req) => {
 export const GET = withErrorHandler(async (req) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId } = ids
+  const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.LEADS_READ)
+
+  const role = extractUserRole(req.headers)
+  const department = extractUserDepartment(req.headers)
 
   const url = new URL(req.url)
   const { page, limit, skip } = getPaginationParams(url.searchParams)
@@ -103,8 +111,11 @@ export const GET = withErrorHandler(async (req) => {
     throw new ValidationError(`Invalid days filter: ${days}`)
   }
 
+  const ownershipFilter = buildOwnershipFilter(userId, role || 'admin', department, 'leads')
+
   const where = {
     orgId,
+    ...ownershipFilter,
     ...(stage && { stage }),
     ...(priority && { priority }),
     ...(assignedToId && { assignedToId }),

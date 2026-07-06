@@ -14,6 +14,7 @@ import { Modal } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { NewLeadForm } from '@/components/new-lead-form'
 import { useCurrentUser } from '@/lib/use-current-user'
+import { PermissionGate } from '@/components/permission-gate'
 import { LEAD_PRIORITIES } from '@/lib/validation'
 import { visibleStagesForRole } from '@/lib/lead-stages'
 
@@ -41,7 +42,6 @@ export default function LeadsPage() {
   const { toast } = useToast()
   const me = useCurrentUser()
 
-  const isAdmin = me?.role === 'admin'
   const stageTabs = ['All', ...(me ? visibleStagesForRole(me.role) : visibleStagesForRole('admin'))]
 
   const [initialized, setInitialized] = useState(false)
@@ -254,22 +254,24 @@ export default function LeadsPage() {
               Kanban
             </Button>
           </div>
-          {isAdmin && (
+          <PermissionGate permission="leads:import">
             <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
               <Upload className="h-4 w-4" />
               Import
             </Button>
-          )}
-          {isAdmin && (
+          </PermissionGate>
+          <PermissionGate permission="leads:export">
             <Button variant="outline" size="sm" onClick={handleExport}>
               <Download className="h-4 w-4" />
               Export
             </Button>
-          )}
-          <Button size="sm" onClick={() => setShowNewLead(true)}>
-            <Plus className="h-4 w-4" />
-            New Lead
-          </Button>
+          </PermissionGate>
+          <PermissionGate permission="leads:create">
+            <Button size="sm" onClick={() => setShowNewLead(true)}>
+              <Plus className="h-4 w-4" />
+              New Lead
+            </Button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -418,51 +420,53 @@ export default function LeadsPage() {
       </div>
 
       {/* Bulk action bar */}
-      {view === 'list' && selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm">
-          <span className="font-medium">{selected.size} selected</span>
-          <label htmlFor="bulk-assign" className="sr-only">
-            Bulk assign to user
-          </label>
-          <select
-            id="bulk-assign"
-            value=""
-            disabled={bulkBusy}
-            onChange={(e) => e.target.value && bulkAssign(e.target.value)}
-            className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="">Assign to…</option>
-            {me && <option value={me.id}>Me ({me.fullName})</option>}
-            {users
-              .filter((u) => u.id !== me?.id)
-              .map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.fullName}
+      <PermissionGate permission="leads:assign">
+        {view === 'list' && selected.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm">
+            <span className="font-medium">{selected.size} selected</span>
+            <label htmlFor="bulk-assign" className="sr-only">
+              Bulk assign to user
+            </label>
+            <select
+              id="bulk-assign"
+              value=""
+              disabled={bulkBusy}
+              onChange={(e) => e.target.value && bulkAssign(e.target.value)}
+              className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Assign to…</option>
+              {me && <option value={me.id}>Me ({me.fullName})</option>}
+              {users
+                .filter((u) => u.id !== me?.id)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.fullName}
+                  </option>
+                ))}
+            </select>
+            <label htmlFor="bulk-priority" className="sr-only">
+              Bulk set priority
+            </label>
+            <select
+              id="bulk-priority"
+              value=""
+              disabled={bulkBusy}
+              onChange={(e) => e.target.value && bulkPriority(e.target.value)}
+              className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Set priority…</option>
+              {LEAD_PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
                 </option>
               ))}
-          </select>
-          <label htmlFor="bulk-priority" className="sr-only">
-            Bulk set priority
-          </label>
-          <select
-            id="bulk-priority"
-            value=""
-            disabled={bulkBusy}
-            onChange={(e) => e.target.value && bulkPriority(e.target.value)}
-            className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="">Set priority…</option>
-            {LEAD_PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-            Clear
-          </Button>
-        </div>
-      )}
+            </select>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+          </div>
+        )}
+      </PermissionGate>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 

@@ -58,6 +58,17 @@ model User {
   avatarUrl         String?
   role              String    @default("user") // admin, manager, user, viewer
   status            String    @default("active") // active, inactive, suspended
+
+  // RBAC Fields
+  department        String?   // e.g. Marketing, Sales, Purchase, Management
+  designation       String?   // e.g. Marketing Executive, Sales Manager
+  reportsToId       String?   // self-referential FK (manager)
+  reportsTo         User?     @relation("ReportsTo", fields: [reportsToId], references: [id])
+  directReports     User[]    @relation("ReportsTo")
+  territory         String?   // e.g. "North India", "West India"
+  branch            String?   // e.g. "Delhi", "Mumbai"
+  defaultDashboard  String?   // route path to redirect after login
+
   lastLogin         DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -71,6 +82,8 @@ model User {
   @@unique([orgId, email])
   @@index([orgId])
   @@index([status])
+  @@index([department])
+  @@index([designation])
 }
 
 model Role {
@@ -78,14 +91,20 @@ model Role {
   orgId             String
   org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  name              String    // admin, sales_manager, sales_rep, viewer
-  permissions       Json      // ["leads:create", "leads:read", "leads:edit", "leads:delete", "quotes:create", ...]
+  name              String    // admin, marketing_manager, marketing_executive, sales_manager, sales_executive, purchase
+  permissions       Json      // ["leads:create", "leads:read", "leads:edit", ...]
   description       String?
+
+  // RBAC Fields
+  department        String?   // which department this role belongs to (null = org-wide like admin)
+  hierarchyLevel    Int       @default(0) // 0=base, 1=manager, 2=admin (for permission inheritance)
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@unique([orgId, name])
   @@index([orgId])
+  @@index([department])
 }
 
 model AuditLog {

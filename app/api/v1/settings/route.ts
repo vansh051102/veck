@@ -2,11 +2,11 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auth'
 import { LEAD_STAGES } from '@/lib/validation'
+import { requirePermission, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
   UnauthorizedError,
-  ForbiddenError,
   ValidationError,
   extractOrgAndUserIds,
 } from '@/lib/api-response'
@@ -38,14 +38,12 @@ export const GET = withErrorHandler(async (req: Request) => {
   return successResponse(settings)
 })
 
-// PUT /api/v1/settings - Update org settings (admin only)
+// PUT /api/v1/settings - Update org settings (requires SETTINGS_EDIT permission)
 export const PUT = withErrorHandler(async (req: Request) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
-
-  const role = req.headers.get('x-user-role')
-  if (role !== 'admin') throw new ForbiddenError('Only admins can change settings')
+  await requirePermission(userId, PERMISSIONS.SETTINGS_EDIT)
 
   const body = await req.json()
   const parsed = UpdateSettingsSchema.safeParse(body)

@@ -117,25 +117,9 @@ export async function refreshSession() {
 
 export async function checkPermission(userId: string, permission: string): Promise<boolean> {
   try {
-    const baseUser = await prisma.user.findUnique({ where: { id: userId } })
-    if (!baseUser) return false
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        org: {
-          include: {
-            roles: {
-              where: { name: baseUser.role },
-            },
-          },
-        },
-      },
-    })
-
-    if (!user?.org?.roles[0]) return false
-
-    const permissions = user.org.roles[0].permissions as string[]
+    const { getUserPermissions } = await import('./rbac')
+    const permissions = await getUserPermissions(userId)
+    if (permissions.includes('*')) return true
     return permissions.includes(permission)
   } catch (error) {
     console.error('Permission check error:', error)
@@ -147,24 +131,28 @@ export async function hasAnyPermission(
   userId: string,
   permissions: string[]
 ): Promise<boolean> {
-  for (const permission of permissions) {
-    if (await checkPermission(userId, permission)) {
-      return true
-    }
+  try {
+    const { checkAnyPermission } = await import('./rbac')
+    return await checkAnyPermission(userId, permissions)
+  } catch (error) {
+    console.error('Permission check error:', error)
+    return false
   }
-  return false
 }
 
 export async function hasAllPermissions(
   userId: string,
   permissions: string[]
 ): Promise<boolean> {
-  for (const permission of permissions) {
-    if (!(await checkPermission(userId, permission))) {
-      return false
-    }
+  try {
+    const { getUserPermissions } = await import('./rbac')
+    const userPermissions = await getUserPermissions(userId)
+    if (userPermissions.includes('*')) return true
+    return permissions.every((p) => userPermissions.includes(p))
+  } catch (error) {
+    console.error('Permission check error:', error)
+    return false
   }
-  return true
 }
 
 // ============================================================================

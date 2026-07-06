@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
 import { useCurrentUser } from '@/lib/use-current-user'
+import { PermissionGate } from '@/components/permission-gate'
 
 interface OrgUser {
   id: string
@@ -45,32 +46,34 @@ export function LeadAssignControl({ leadId, assignedToId, assignedToName, onChan
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <select
-        value={assignedToId || ''}
-        onChange={(e) => e.target.value && assign(e.target.value)}
-        disabled={saving}
-        aria-label="Assign lead to user"
-        className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-      >
-        <option value="" disabled>
-          {assignedToName || 'Unassigned'}
-        </option>
-        {users.map((u) => (
-          <option key={u.id} value={u.id}>
-            {u.fullName}
-          </option>
-        ))}
-      </select>
-      {me && me.id !== assignedToId && (
-        <button
-          type="button"
-          onClick={() => assign(me.id)}
+      <PermissionGate permission="leads:assign">
+        <select
+          value={assignedToId || ''}
+          onChange={(e) => e.target.value && assign(e.target.value)}
           disabled={saving}
-          className="text-xs text-primary underline-offset-2 hover:underline"
+          aria-label="Assign lead to user"
+          className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
         >
-          Assign to me
-        </button>
-      )}
+          <option value="" disabled>
+            {assignedToName || 'Unassigned'}
+          </option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.fullName}
+            </option>
+          ))}
+        </select>
+        {me && me.id !== assignedToId && (
+          <button
+            type="button"
+            onClick={() => assign(me.id)}
+            disabled={saving}
+            className="text-xs text-primary underline-offset-2 hover:underline"
+          >
+            Assign to me
+          </button>
+        )}
+      </PermissionGate>
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   )

@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { api, ApiError } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { LEAD_STAGES } from '@/lib/validation'
+import { useCurrentUser } from '@/lib/use-current-user'
+import { visibleStagesForRole } from '@/lib/lead-stages'
 
 interface LeadStats {
   total: number
@@ -24,6 +25,7 @@ interface LeadSummary {
 }
 
 export default function DashboardPage() {
+  const me = useCurrentUser()
   const [stats, setStats] = useState<LeadStats | null>(null)
   const [recentLeads, setRecentLeads] = useState<LeadSummary[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -65,7 +67,16 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Dashboard</h1>
+      <div>
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        {me && (
+          <p className="text-sm text-muted-foreground mt-1">
+            Welcome, {me.fullName}
+            {me.department && ` — ${me.department}`}
+            {me.designation && `, ${me.designation}`}
+          </p>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -109,7 +120,7 @@ export default function DashboardPage() {
           <CardTitle>Leads by Stage</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          {LEAD_STAGES.map((stage) => (
+          {visibleStagesForRole(me?.role ?? 'user').map((stage) => (
             <Badge key={stage} variant="default">
               {stage}: {stats?.byStage[stage] ?? 0}
             </Badge>

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auth'
 import { UpdateActivitySchema } from '@/lib/validation'
+import { requirePermission, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
@@ -19,6 +20,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.ACTIVITIES_EDIT)
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')
@@ -49,6 +51,7 @@ export const DELETE = withErrorHandler(async (req: Request, { params }: Params) 
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.ACTIVITIES_DELETE)
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')

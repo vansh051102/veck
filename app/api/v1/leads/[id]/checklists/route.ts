@@ -8,7 +8,9 @@ import {
   NotFoundError,
   ValidationError,
   extractOrgAndUserIds,
+  extractUserRole,
 } from '@/lib/api-response'
+import { requirePermission, canAccessLead, PERMISSIONS } from '@/lib/rbac'
 
 interface Params {
   params: { id: string }
@@ -21,6 +23,12 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.CHECKLISTS_CREATE)
+
+  const role = extractUserRole(req.headers)
+  if (!await canAccessLead(userId, role || 'admin', params.id)) {
+    throw new NotFoundError('Lead')
+  }
 
   const lead = await prisma.lead.findFirst({ where: { id: params.id, orgId } })
   if (!lead) throw new NotFoundError('Lead')
@@ -52,7 +60,13 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId } = ids
+  const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.CHECKLISTS_READ)
+
+  const role = extractUserRole(req.headers)
+  if (!await canAccessLead(userId, role || 'admin', params.id)) {
+    throw new NotFoundError('Lead')
+  }
 
   const lead = await prisma.lead.findFirst({ where: { id: params.id, orgId } })
   if (!lead) throw new NotFoundError('Lead')

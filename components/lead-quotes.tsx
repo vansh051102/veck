@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { Button } from '@/components/ui/button'
+import { PermissionGate } from '@/components/permission-gate'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -39,10 +40,12 @@ export function LeadQuotes({
   leadId,
   quotes,
   onChanged,
+  renderActions,
 }: {
   leadId: string
   quotes: Quote[]
   onChanged: () => void
+  renderActions?: (onShow: () => void) => React.ReactNode
 }) {
   const { toast } = useToast()
   const [showForm, setShowForm] = useState(false)
@@ -138,9 +141,11 @@ export function LeadQuotes({
             <div className="flex items-center gap-2">
               <Badge variant={STATUS_VARIANT[q.status] || 'default'}>{q.status}</Badge>
               {q.status === 'draft' && sendFormId !== q.id && (
-                <Button size="sm" variant="outline" onClick={() => setSendFormId(q.id)}>
-                  Send
-                </Button>
+                <PermissionGate permission="quotes:send">
+                  <Button size="sm" variant="outline" onClick={() => setSendFormId(q.id)}>
+                    Send
+                  </Button>
+                </PermissionGate>
               )}
             </div>
           </div>
@@ -179,86 +184,92 @@ export function LeadQuotes({
         </div>
       ))}
 
-      {showForm ? (
-        <form onSubmit={handleCreate} className="flex flex-col gap-3 rounded-md border border-border p-3">
-          {items.map((item, index) => (
-            <div key={index} className="grid grid-cols-4 gap-2">
+      <PermissionGate permission="quotes:create">
+        {showForm ? (
+          <form onSubmit={handleCreate} className="flex flex-col gap-3 rounded-md border border-border p-3">
+            {items.map((item, index) => (
+              <div key={index} className="grid grid-cols-4 gap-2">
+                <input
+                  value={item.productId}
+                  onChange={(e) => updateItem(index, 'productId', e.target.value)}
+                  placeholder="Product / SKU"
+                  aria-label="Product or SKU"
+                  className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="number"
+                  value={item.quantity}
+                  onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                  placeholder="Qty"
+                  aria-label="Quantity"
+                  min={1}
+                  className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="number"
+                  value={item.price}
+                  onChange={(e) => updateItem(index, 'price', e.target.value)}
+                  placeholder="Price"
+                  aria-label="Price"
+                  min={0}
+                  className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="number"
+                  value={item.discount}
+                  onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                  placeholder="Discount"
+                  aria-label="Discount"
+                  min={0}
+                  className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            ))}
+            {fieldErrors.items && <p className="text-xs text-destructive">{fieldErrors.items}</p>}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setItems((prev) => [...prev, emptyLineItem()])}
+            >
+              Add line item
+            </Button>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="quote-valid-until" className="text-sm font-medium">
+                Valid until
+              </label>
               <input
-                value={item.productId}
-                onChange={(e) => updateItem(index, 'productId', e.target.value)}
-                placeholder="Product / SKU"
-                aria-label="Product or SKU"
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                id="quote-valid-until"
+                type="date"
+                value={validUntil}
+                onChange={(e) => setValidUntil(e.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
               />
-              <input
-                type="number"
-                value={item.quantity}
-                onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                placeholder="Qty"
-                aria-label="Quantity"
-                min={1}
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              />
-              <input
-                type="number"
-                value={item.price}
-                onChange={(e) => updateItem(index, 'price', e.target.value)}
-                placeholder="Price"
-                aria-label="Price"
-                min={0}
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              />
-              <input
-                type="number"
-                value={item.discount}
-                onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                placeholder="Discount"
-                aria-label="Discount"
-                min={0}
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              />
+              {fieldErrors.validUntil && (
+                <p className="text-xs text-destructive">{fieldErrors.validUntil}</p>
+              )}
             </div>
-          ))}
-          {fieldErrors.items && <p className="text-xs text-destructive">{fieldErrors.items}</p>}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setItems((prev) => [...prev, emptyLineItem()])}
-          >
-            Add line item
-          </Button>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="quote-valid-until" className="text-sm font-medium">
-              Valid until
-            </label>
-            <input
-              id="quote-valid-until"
-              type="date"
-              value={validUntil}
-              onChange={(e) => setValidUntil(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-            />
-            {fieldErrors.validUntil && (
-              <p className="text-xs text-destructive">{fieldErrors.validUntil}</p>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={submitting}>
-              {submitting ? 'Creating…' : 'Create quote'}
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+            <div className="flex gap-2">
+              <Button type="submit" size="sm" disabled={submitting}>
+                {submitting ? 'Creating…' : 'Create quote'}
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
       ) : (
-        <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
-          New quote
-        </Button>
+        renderActions ? (
+          renderActions(() => setShowForm(true))
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
+            New quote
+          </Button>
+        )
       )}
+      </PermissionGate>
     </div>
   )
 }

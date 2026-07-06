@@ -1,0 +1,69 @@
+import { prisma } from '@/lib/db'
+import { requirePermission, PERMISSIONS } from '@/lib/rbac'
+import {
+  successResponse,
+  withErrorHandler,
+  UnauthorizedError,
+  NotFoundError,
+  ValidationError,
+  extractOrgAndUserIds,
+} from '@/lib/api-response'
+import { z } from 'zod'
+
+interface Params {
+  params: { id: string }
+}
+
+const UpdateRoleSchema = z.object({
+  permissions: z.array(z.string()).min(1, 'At least one permission is required'),
+  description: z.string().nullable().optional(),
+})
+
+// GET /api/v1/roles/:id - Get a single role
+export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
+  const ids = extractOrgAndUserIds(req.headers)
+  if (!ids) throw new UnauthorizedError('User context not found')
+  const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.ROLES_READ)
+
+  const role = await prisma.role.findFirst({
+    where: { id: params.id, orgId },
+  })
+  if (!role) throw new NotFoundError('Role')
+
+  return successResponse(role)
+})
+
+// PUT /api/v1/roles/:id - Update role permissions
+export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
+  const ids = extractOrgAndUserIds(req.headers)
+  if (!ids) throw new UnauthorizedError('User context not found')
+  const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.ROLES_EDIT)
+
+  const existing = await prisma.role.findFirst({
+    where: { id: params.id, orgId },
+  })
+  if (!existing) throw new NotFoundError('Role')
+
+  // Prevent editing the admin role's permissions (safety)
+  if (existing.name === 'admin') {
+    throw new ValidationError('Cannot modify admin role permissions')
+  }
+
+  const body = await req.json()
+  const parsed = UpdateRoleSchema.safeParse(body)
+  if (!parsed.success) {
+    throw new ValidationError('Invalid role data', parsed.error.flatten())
+  }
+
+  const role = await prisma.role.update({
+    where: { id: params.id },
+    data: {
+      permissions: parsed.data.permissions,
+      ...(parsed.data.description !== undefined && { description: parsed.data.description }),
+    },
+  })
+
+  return successResponse(role)
+})

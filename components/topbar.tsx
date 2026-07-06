@@ -5,9 +5,11 @@ import { LogOut, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { supabaseBrowser } from '@/lib/supabase-browser'
+import { useCurrentUser } from '@/lib/use-current-user'
 
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter()
+  const me = useCurrentUser()
 
   async function handleSignOut() {
     await supabaseBrowser.auth.signOut()
@@ -22,6 +24,11 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
       </Button>
       <div />
       <div className="flex items-center gap-2">
+        {me && (
+          <span className="text-sm text-muted-foreground">
+            {me.fullName}{me.designation ? ` — ${me.designation}` : ''}
+          </span>
+        )}
         <ThemeToggle />
         <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label="Sign out">
           <LogOut className="h-4 w-4" />

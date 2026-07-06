@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auth'
 import { CreateContactSchema } from '@/lib/validation'
+import { requirePermission, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   paginatedResponse,
@@ -16,6 +17,7 @@ export const POST = withErrorHandler(async (req) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
   const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.CONTACTS_CREATE)
 
   const body = await req.json()
   const parsed = CreateContactSchema.safeParse(body)
@@ -49,7 +51,8 @@ export const POST = withErrorHandler(async (req) => {
 export const GET = withErrorHandler(async (req) => {
   const ids = extractOrgAndUserIds(req.headers)
   if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId } = ids
+  const { orgId, userId } = ids
+  await requirePermission(userId, PERMISSIONS.CONTACTS_READ)
 
   const url = new URL(req.url)
   const { page, limit, skip } = getPaginationParams(url.searchParams)
