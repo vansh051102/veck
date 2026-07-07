@@ -1,9 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { api } from './api-client'
-import { supabaseBrowser } from './supabase-browser'
+// ============================================================================
+// BACKWARD-COMPATIBLE RE-EXPORTS
+// ============================================================================
+// This file re-exports everything from the new AuthProvider-based
+// implementation. All existing imports like:
+//   import { useCurrentUser } from '@/lib/use-current-user'
+// continue to work. The global mutable cache has been eliminated.
+//
+// New code should import from '@/lib/providers/auth-provider' directly.
 
+export { AuthProvider, useAuth } from './providers/auth-provider'
+export { useCurrentUser, useHasPermission, useHasAnyPermission } from './providers/auth-provider'
+
+// Type re-exports
 export interface CurrentUser {
   id: string
   email: string
@@ -14,98 +24,20 @@ export interface CurrentUser {
   permissions: string[]
 }
 
-interface MeResponse {
+export interface MeResponse {
   user: CurrentUser
   org: { id: string; name: string }
 }
 
-// Module-level cache so multiple components share one /auth/me request.
-let cached: CurrentUser | null = null
-let inflight: Promise<CurrentUser | null> | null = null
-// Mounted useCurrentUser() consumers re-fetch when notified (see
-// invalidateCurrentUser) so profile edits propagate without a page reload.
-const listeners = new Set<() => void>()
-
-async function fetchCurrentUser(): Promise<CurrentUser | null> {
-  if (cached) return cached
-  if (!inflight) {
-    inflight = api
-      .get<MeResponse>('/auth/me')
-      .then((res) => {
-        cached = res.data?.user ?? null
-        return cached
-      })
-      .catch(() => null)
-      .finally(() => {
-        inflight = null
-      })
-  }
-  return inflight
-}
-
 /**
- * Clears the module-level cache and tells every mounted useCurrentUser()
- * consumer to re-fetch /auth/me. Call after a self-service profile update
- * so the topbar/sidebar reflect changes (e.g. a new name) without a reload.
+ * @deprecated Use useAuth().invalidate() instead.
+ * This function is kept for backward compatibility only.
  */
 export function invalidateCurrentUser(): void {
-  cached = null
-  listeners.forEach((refetch) => refetch())
-}
-
-// The cache must not survive a session change: signing out as one user and
-// in as another (SPA navigation, no full reload) would otherwise keep
-// serving the previous user's identity/permissions to the whole UI.
-let authSubscribed = false
-function subscribeToAuthChanges() {
-  if (authSubscribed || typeof window === 'undefined') return
-  authSubscribed = true
-  supabaseBrowser.auth.onAuthStateChange((event) => {
-    if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
-      invalidateCurrentUser()
-    }
-  })
-}
-
-export function useCurrentUser(): CurrentUser | null {
-  const [user, setUser] = useState<CurrentUser | null>(cached)
-
-  useEffect(() => {
-    subscribeToAuthChanges()
-    let cancelled = false
-    function load() {
-      fetchCurrentUser().then((u) => {
-        if (!cancelled) setUser(u)
-      })
-    }
-    load()
-    listeners.add(load)
-    return () => {
-      cancelled = true
-      listeners.delete(load)
-    }
-  }, [])
-
-  return user
-}
-
-/**
- * Check if the current user has a specific permission.
- * Returns false if user is not loaded yet.
- */
-export function useHasPermission(permission: string): boolean {
-  const user = useCurrentUser()
-  if (!user) return false
-  if (user.permissions.includes('*')) return true
-  return user.permissions.includes(permission)
-}
-
-/**
- * Check if the current user has ANY of the given permissions.
- */
-export function useHasAnyPermission(permissions: string[]): boolean {
-  const user = useCurrentUser()
-  if (!user) return false
-  if (user.permissions.includes('*')) return true
-  return permissions.some((p) => user.permissions.includes(p))
+  // In the new provider, invalidation happens via useAuth().invalidate()
+  // or automatically on auth state changes. This is a no-op for code
+  // that still calls the old function.
+  if (typeof window !== 'undefined') {
+    window.location.reload()
+  }
 }

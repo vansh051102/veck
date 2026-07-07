@@ -1,14 +1,14 @@
 import { prisma } from '@/lib/db'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
+import { PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
-  UnauthorizedError,
   NotFoundError,
   ValidationError,
   ForbiddenError,
-  extractOrgAndUserIds,
 } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 import { z } from 'zod'
 
 interface Params {
@@ -26,10 +26,9 @@ const UpdateUserSchema = z.object({
 
 // GET /api/v1/users/:id - Get a single user
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.USERS_READ)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.USERS_READ)
 
   const user = await prisma.user.findFirst({
     where: { id: params.id, orgId },
@@ -55,10 +54,9 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
 
 // PUT /api/v1/users/:id - Update user role, department, designation, status
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.USERS_EDIT)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.USERS_EDIT)
 
   // Prevent self-modification of role
   if (params.id === userId) {
@@ -97,10 +95,9 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 
 // DELETE /api/v1/users/:id - Soft-deactivate user
 export const DELETE = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.USERS_DELETE)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.USERS_DELETE)
 
   if (params.id === userId) {
     throw new ForbiddenError('Cannot deactivate your own account')

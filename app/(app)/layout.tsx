@@ -4,12 +4,14 @@ import { useState } from 'react'
 import { Sidebar } from '@/components/sidebar'
 import { Topbar } from '@/components/topbar'
 import { ToastProvider } from '@/components/ui/toast'
+import { AuthProvider } from '@/lib/providers/auth-provider'
 import { cn } from '@/lib/utils'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   return (
+    <AuthProvider>
     <ToastProvider>
     <div className="flex h-screen">
       {/* Desktop sidebar */}
@@ -36,5 +38,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
     </div>
     </ToastProvider>
+    </AuthProvider>
   )
 }

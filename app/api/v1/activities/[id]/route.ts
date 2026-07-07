@@ -1,15 +1,10 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { UpdateActivitySchema } from '@/lib/validation'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  NotFoundError,
-  ValidationError,
-  extractOrgAndUserIds,
-} from '@/lib/api-response'
+import { PERMISSIONS } from '@/lib/rbac'
+import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 interface Params {
   params: { id: string }
@@ -17,10 +12,9 @@ interface Params {
 
 // PUT /api/v1/activities/:id - Update an activity
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.ACTIVITIES_EDIT)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ACTIVITIES_EDIT)
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')
@@ -48,10 +42,9 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 
 // DELETE /api/v1/activities/:id - Delete an activity
 export const DELETE = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.ACTIVITIES_DELETE)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ACTIVITIES_DELETE)
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')

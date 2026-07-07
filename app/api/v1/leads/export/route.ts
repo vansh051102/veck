@@ -2,23 +2,19 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { toCsv } from '@/lib/csv'
 import { LEAD_STAGES, LEAD_PRIORITIES } from '@/lib/validation'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
-import {
-  withErrorHandler,
-  UnauthorizedError,
-  ValidationError,
-  extractOrgAndUserIds,
-} from '@/lib/api-response'
+import { PERMISSIONS } from '@/lib/rbac'
+import { withErrorHandler, ValidationError } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 const EXPORT_LIMIT = 5000
 
 // GET /api/v1/leads/export - Download leads as CSV. Accepts the same
 // filters as GET /leads (stage, priority, days, search).
 export const GET = withErrorHandler(async (req: Request) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.LEADS_EXPORT)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.LEADS_EXPORT)
 
   const url = new URL(req.url)
   const stage = url.searchParams.get('stage')

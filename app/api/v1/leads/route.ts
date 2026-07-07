@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { CreateLeadSchema, LEAD_STAGES, LEAD_PRIORITIES } from '@/lib/validation'
 import {

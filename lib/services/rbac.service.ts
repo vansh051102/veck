@@ -9,6 +9,9 @@
 //   rbacService.requirePermission(perms, 'leads:create')
 
 import { prisma } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('rbac')
 
 export interface UserPermissions {
   permissions: string[]
@@ -66,7 +69,7 @@ export class RbacService {
       }
     } catch (error) {
       if (error instanceof PermissionResolutionError) throw error
-      console.error('getUserPermissions error:', error)
+      log.error({ err: error, userId }, 'getUserPermissions failed')
       // On DB error, deny all permissions (fail closed)
       return { permissions: [], hasWildcard: false }
     }

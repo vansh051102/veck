@@ -1,15 +1,10 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { UpdateContactSchema } from '@/lib/validation'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  NotFoundError,
-  ValidationError,
-  extractOrgAndUserIds,
-} from '@/lib/api-response'
+import { PERMISSIONS } from '@/lib/rbac'
+import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 interface Params {
   params: { id: string }
@@ -17,10 +12,9 @@ interface Params {
 
 // GET /api/v1/contacts/:id
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.CONTACTS_READ)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.CONTACTS_READ)
 
   const contact = await prisma.contact.findFirst({
     where: { id: params.id, orgId },
@@ -33,10 +27,9 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
 
 // PUT /api/v1/contacts/:id
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.CONTACTS_EDIT)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.CONTACTS_EDIT)
 
   const existing = await prisma.contact.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Contact')

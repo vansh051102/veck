@@ -1,13 +1,8 @@
 import { prisma } from '@/lib/db'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  NotFoundError,
-  ValidationError,
-  extractOrgAndUserIds,
-} from '@/lib/api-response'
+import { PERMISSIONS } from '@/lib/rbac'
+import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 import { z } from 'zod'
 
 interface Params {
@@ -21,10 +16,9 @@ const UpdateRoleSchema = z.object({
 
 // GET /api/v1/roles/:id - Get a single role
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.ROLES_READ)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ROLES_READ)
 
   const role = await prisma.role.findFirst({
     where: { id: params.id, orgId },
@@ -36,10 +30,9 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
 
 // PUT /api/v1/roles/:id - Update role permissions
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.ROLES_EDIT)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ROLES_EDIT)
 
   const existing = await prisma.role.findFirst({
     where: { id: params.id, orgId },

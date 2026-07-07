@@ -1,15 +1,15 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { UpdatePurchaseRequestSchema } from '@/lib/validation'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
+import { PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
-  UnauthorizedError,
   NotFoundError,
   ValidationError,
-  extractOrgAndUserIds,
 } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 interface Params {
   params: { id: string }
@@ -19,10 +19,9 @@ const PR_STATUSES = ['pending', 'sent_to_supplier', 'received', 'approved'] as c
 
 // GET /api/v1/purchase-requests/:id
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.PURCHASE_REQUESTS_READ)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.PURCHASE_REQUESTS_READ)
 
   const pr = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId } })
   if (!pr) throw new NotFoundError('Purchase request')
@@ -32,10 +31,9 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
 
 // PUT /api/v1/purchase-requests/:id - Update PR fields and/or advance status
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.PURCHASE_REQUESTS_EDIT)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.PURCHASE_REQUESTS_EDIT)
 
   const existing = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Purchase request')

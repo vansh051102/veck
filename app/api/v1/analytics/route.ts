@@ -1,24 +1,18 @@
 import { prisma } from '@/lib/db'
-import { requirePermission, PERMISSIONS, buildOwnershipFilter } from '@/lib/rbac'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  extractOrgAndUserIds,
-  extractUserRole,
-  extractUserDepartment,
-} from '@/lib/api-response'
+import { PERMISSIONS, buildOwnershipFilter } from '@/lib/rbac'
+import { successResponse, withErrorHandler } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 // GET /api/v1/analytics - Aggregated KPIs, stage distribution, per-salesperson
 // stats, and 30-day activity volume.
 // Role-scoped: sales/purchase roles see only their own data; admin/manager see all.
 export const GET = withErrorHandler(async (req: Request) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.ANALYTICS_READ)
-  const role = extractUserRole(req.headers) ?? 'user'
-  const department = extractUserDepartment(req.headers)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ANALYTICS_READ)
+  const role = ctx.role
+  const department = ctx.department
 
   const ownershipFilter = buildOwnershipFilter(userId, role, department, 'leads')
   const leadsWhere = {

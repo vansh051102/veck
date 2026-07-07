@@ -1,23 +1,22 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { CreateContactSchema } from '@/lib/validation'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
+import { PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   paginatedResponse,
   withErrorHandler,
-  UnauthorizedError,
   ValidationError,
-  extractOrgAndUserIds,
   getPaginationParams,
 } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 // POST /api/v1/contacts - Create a contact
 export const POST = withErrorHandler(async (req) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.CONTACTS_CREATE)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.CONTACTS_CREATE)
 
   const body = await req.json()
   const parsed = CreateContactSchema.safeParse(body)
@@ -49,10 +48,9 @@ export const POST = withErrorHandler(async (req) => {
 
 // GET /api/v1/contacts - List contacts with pagination & search
 export const GET = withErrorHandler(async (req) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.CONTACTS_READ)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.CONTACTS_READ)
 
   const url = new URL(req.url)
   const { page, limit, skip } = getPaginationParams(url.searchParams)

@@ -1,69 +1,18 @@
 import { NextResponse } from 'next/server'
+import { AppError } from './errors'
+import { logger } from './logger'
 
-// ============================================================================
-// CUSTOM ERROR CLASSES
-// ============================================================================
-
-export class AppError extends Error {
-  constructor(
-    public code: string,
-    public statusCode: number,
-    message: string,
-    public details?: any
-  ) {
-    super(message)
-    this.name = 'AppError'
-  }
-}
-
-export class ValidationError extends AppError {
-  constructor(message: string, details?: any) {
-    super('VALIDATION_ERROR', 400, message, details)
-    this.name = 'ValidationError'
-  }
-}
-
-export class UnauthorizedError extends AppError {
-  constructor(message = 'Unauthorized') {
-    super('UNAUTHORIZED', 401, message)
-    this.name = 'UnauthorizedError'
-  }
-}
-
-export class ForbiddenError extends AppError {
-  constructor(message = 'Forbidden') {
-    super('FORBIDDEN', 403, message)
-    this.name = 'ForbiddenError'
-  }
-}
-
-export class NotFoundError extends AppError {
-  constructor(resource: string) {
-    super('NOT_FOUND', 404, `${resource} not found`)
-    this.name = 'NotFoundError'
-  }
-}
-
-export class ConflictError extends AppError {
-  constructor(message: string) {
-    super('CONFLICT', 409, message)
-    this.name = 'ConflictError'
-  }
-}
-
-export class RateLimitError extends AppError {
-  constructor(message = 'Rate limit exceeded') {
-    super('RATE_LIMIT_EXCEEDED', 429, message)
-    this.name = 'RateLimitError'
-  }
-}
-
-export class InternalServerError extends AppError {
-  constructor(message = 'Internal server error') {
-    super('INTERNAL_SERVER_ERROR', 500, message)
-    this.name = 'InternalServerError'
-  }
-}
+// Re-export all error classes for backward compatibility
+export {
+  AppError,
+  ValidationError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotFoundError,
+  ConflictError,
+  RateLimitError,
+  InternalServerError,
+} from './errors'
 
 // ============================================================================
 // RESPONSE BUILDERS
@@ -134,7 +83,6 @@ export function errorResponse(error: unknown) {
     )
   }
 
-  // Handle Prisma errors
   if (error instanceof Error && error.name === 'PrismaClientKnownRequestError') {
     const prismaError = error as any
     let message = 'Database error'
@@ -165,8 +113,7 @@ export function errorResponse(error: unknown) {
     )
   }
 
-  // Unexpected error
-  console.error('Unexpected error:', error)
+  logger.error({ err: error }, 'Unhandled error in API route')
 
   return NextResponse.json(
     {
@@ -192,9 +139,21 @@ export function withErrorHandler<Args extends unknown[]>(
   handler: (req: Request, ...args: Args) => Promise<NextResponse>
 ) {
   return async (req: Request, ...args: Args) => {
+    const start = Date.now()
     try {
-      return await handler(req, ...args)
+      const res = await handler(req, ...args)
+      const duration = Date.now() - start
+      logger.info(
+        { method: req.method, url: req.url, status: res.status, duration },
+        'API request'
+      )
+      return res
     } catch (error) {
+      const duration = Date.now() - start
+      logger.error(
+        { method: req.method, url: req.url, duration, err: error },
+        'API request failed'
+      )
       return errorResponse(error)
     }
   }
@@ -226,41 +185,4 @@ export async function getTotal(query: Promise<any>) {
   } catch {
     return 0
   }
-}
-
-// ============================================================================
-// VALIDATION HELPERS
-// ============================================================================
-
-export function validateOrgId(orgId: string | null | undefined): orgId is string {
-  return typeof orgId === 'string' && orgId.length > 0
-}
-
-export function validateUserId(userId: string | null | undefined): userId is string {
-  return typeof userId === 'string' && userId.length > 0
-}
-
-export function extractOrgAndUserIds(
-  headers: Headers
-): { orgId: string; userId: string } | null {
-  const orgId = headers.get('x-org-id')
-  const userId = headers.get('x-user-id')
-
-  if (!orgId || !userId) return null
-
-  return { orgId, userId }
-}
-
-export function extractUserRole(headers: Headers): string | null {
-  return headers.get('x-user-role')
-}
-
-export function extractUserDepartment(headers: Headers): string | null {
-  const dept = headers.get('x-user-department')
-  return dept || null
-}
-
-export function extractUserDesignation(headers: Headers): string | null {
-  const desig = headers.get('x-user-designation')
-  return desig || null
 }

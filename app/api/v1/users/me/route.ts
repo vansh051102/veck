@@ -1,12 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  ValidationError,
-  extractOrgAndUserIds,
-} from '@/lib/api-response'
+import { successResponse, withErrorHandler, ValidationError } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
 
 const UpdateSelfSchema = z.object({
   fullName: z.string().min(1, 'Full name is required').max(200),
@@ -19,9 +14,8 @@ const UpdateSelfSchema = z.object({
 // row structurally (no :id param exists for anyone to tamper with), and the
 // schema only accepts fullName, never role/department/status/email.
 export const PUT = withErrorHandler(async (req: Request) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { userId } = ids
+  const ctx = await validateRequest(req)
+  const { userId } = ctx
 
   const body = await req.json()
   const parsed = UpdateSelfSchema.safeParse(body)

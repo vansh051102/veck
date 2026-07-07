@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { UpdateLeadSchema } from '@/lib/validation'
 import { isTerminalStage } from '@/lib/lead-stages'
 import {

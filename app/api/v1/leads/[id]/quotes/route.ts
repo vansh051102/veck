@@ -1,17 +1,11 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { nextQuoteNumber } from '@/lib/numbering'
 import { CreateQuoteSchema } from '@/lib/validation'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  NotFoundError,
-  ValidationError,
-  extractOrgAndUserIds,
-  extractUserRole,
-} from '@/lib/api-response'
-import { requirePermission, canAccessLead, PERMISSIONS } from '@/lib/rbac'
+import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 interface Params {
   params: { id: string }
@@ -26,12 +20,11 @@ function calculateQuoteTotals(items: { quantity: number; price: number; discount
 
 // POST /api/v1/leads/:id/quotes - Draft a quote for a lead
 export const POST = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.QUOTES_CREATE)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.QUOTES_CREATE)
 
-  const role = extractUserRole(req.headers)
+  const role = ctx.role
   if (!await canAccessLead(userId, role || 'admin', params.id)) {
     throw new NotFoundError('Lead')
   }
@@ -93,12 +86,11 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 
 // GET /api/v1/leads/:id/quotes - List quotes for a lead
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.QUOTES_READ)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.QUOTES_READ)
 
-  const role = extractUserRole(req.headers)
+  const role = ctx.role
   if (!await canAccessLead(userId, role || 'admin', params.id)) {
     throw new NotFoundError('Lead')
   }

@@ -1,16 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
 import { prisma } from './db'
 import { seedDefaultRoles } from './seed-roles'
+import { supabase, supabaseAdmin } from './supabase-clients'
+import { createChildLogger } from './logger'
 
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const log = createChildLogger('auth')
 
-export const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Re-export Supabase clients for backward compatibility
+export { supabase, supabaseAdmin }
 
 // ============================================================================
 // AUTH FUNCTIONS
@@ -23,7 +19,6 @@ export async function signUp(
   orgName: string
 ) {
   try {
-    // 1. Create Supabase user
     const { data: { user }, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -33,7 +28,6 @@ export async function signUp(
     if (authError) throw authError
     if (!user) throw new Error('Failed to create user')
 
-    // 2. Create organization
     const org = await prisma.organization.create({
       data: {
         name: orgName,
@@ -42,7 +36,6 @@ export async function signUp(
       },
     })
 
-    // 3. Create user in database
     const dbUser = await prisma.user.create({
       data: {
         id: user.id,
@@ -54,10 +47,8 @@ export async function signUp(
       include: { org: true },
     })
 
-    // 4. Seed default roles (admin, sales, purchase, etc.) for the new org
     await seedDefaultRoles(org.id)
 
-    // 5. Create default settings
     await prisma.settings.create({
       data: {
         orgId: org.id,
@@ -70,7 +61,7 @@ export async function signUp(
 
     return { user: dbUser, org }
   } catch (error) {
-    console.error('SignUp error:', error)
+    log.error({ err: error }, 'signUp failed')
     throw error
   }
 }
@@ -85,7 +76,7 @@ export async function signIn(email: string, password: string) {
     if (error) throw error
     return data
   } catch (error) {
-    console.error('SignIn error:', error)
+    log.error({ err: error }, 'signIn failed')
     throw error
   }
 }
@@ -104,7 +95,7 @@ export async function getCurrentUser(session: any) {
     })
     return user
   } catch (error) {
-    console.error('Get current user error:', error)
+    log.error({ err: error }, 'getCurrentUser failed')
     return null
   }
 }
@@ -116,140 +107,23 @@ export async function refreshSession() {
 }
 
 // ============================================================================
-// PERMISSION & ACCESS CONTROL
+// SESSION VALIDATION
 // ============================================================================
 
-export async function checkPermission(userId: string, permission: string): Promise<boolean> {
+export async function validateSession(token: string) {
   try {
-    const { getUserPermissions } = await import('./rbac')
-    const permissions = await getUserPermissions(userId)
-    if (permissions.includes('*')) return true
-    return permissions.includes(permission)
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    if (error || !user) return null
+    return user
   } catch (error) {
-    console.error('Permission check error:', error)
-    return false
-  }
-}
-
-export async function hasAnyPermission(
-  userId: string,
-  permissions: string[]
-): Promise<boolean> {
-  try {
-    const { checkAnyPermission } = await import('./rbac')
-    return await checkAnyPermission(userId, permissions)
-  } catch (error) {
-    console.error('Permission check error:', error)
-    return false
-  }
-}
-
-export async function hasAllPermissions(
-  userId: string,
-  permissions: string[]
-): Promise<boolean> {
-  try {
-    const { getUserPermissions } = await import('./rbac')
-    const userPermissions = await getUserPermissions(userId)
-    if (userPermissions.includes('*')) return true
-    return permissions.every((p) => userPermissions.includes(p))
-  } catch (error) {
-    console.error('Permission check error:', error)
-    return false
-  }
-}
-
-// ============================================================================
-// ROLE MANAGEMENT
-// ============================================================================
-
-export async function createRole(
-  orgId: string,
-  name: string,
-  permissions: string[],
-  description?: string
-) {
-  return await prisma.role.create({
-    data: {
-      orgId,
-      name,
-      permissions,
-      description,
-    },
-  })
-}
-
-export async function updateRole(
-  roleId: string,
-  permissions: string[],
-  description?: string
-) {
-  return await prisma.role.update({
-    where: { id: roleId },
-    data: {
-      permissions,
-      ...(description && { description }),
-    },
-  })
-}
-
-export async function assignRoleToUser(userId: string, role: string) {
-  return await prisma.user.update({
-    where: { id: userId },
-    data: { role },
-    include: { org: true },
-  })
-}
-
-// ============================================================================
-// AUDIT LOGGING
-// ============================================================================
-
-export async function logAudit(
-  orgId: string,
-  userId: string,
-  action: string,
-  resourceType: string,
-  resourceId: string,
-  resourceName?: string,
-  changes?: any,
-  ipAddress?: string
-) {
-  try {
-    await prisma.auditLog.create({
-      data: {
-        orgId,
-        userId,
-        action,
-        resourceType,
-        resourceId,
-        resourceName,
-        changes,
-        ipAddress,
-      },
-    })
-  } catch (error) {
-    console.error('Audit log error:', error)
-    // Don't throw - audit logging shouldn't break the main operation
-  }
-}
-
-// ============================================================================
-// ORGANIZATION MANAGEMENT
-// ============================================================================
-
-export async function getUserOrganization(userId: string) {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { org: true },
-    })
-    return user?.org || null
-  } catch (error) {
-    console.error('Get org error:', error)
+    log.error({ err: error }, 'session validation failed')
     return null
   }
 }
+
+// ============================================================================
+// USER MANAGEMENT (used by API routes)
+// ============================================================================
 
 export async function getOrganizationUsers(orgId: string) {
   return await prisma.user.findMany({
@@ -263,35 +137,5 @@ export async function getOrganizationUsers(orgId: string) {
       lastLogin: true,
       createdAt: true,
     },
-  })
-}
-
-export async function updateUserStatus(userId: string, status: 'active' | 'inactive' | 'suspended') {
-  return await prisma.user.update({
-    where: { id: userId },
-    data: { status },
-  })
-}
-
-// ============================================================================
-// SESSION VALIDATION
-// ============================================================================
-
-export async function validateSession(token: string) {
-  try {
-    const { data: { user }, error } = await supabase.auth.getUser(token)
-    if (error || !user) return null
-    return user
-  } catch (error) {
-    console.error('Session validation error:', error)
-    return null
-  }
-}
-
-export async function getSessionUser(session: any) {
-  if (!session?.user?.id) return null
-  return await prisma.user.findUnique({
-    where: { id: session.user.id },
-    include: { org: true },
   })
 }

@@ -1,16 +1,12 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { LEAD_PRIORITIES } from '@/lib/validation'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  ValidationError,
-  extractOrgAndUserIds,
-} from '@/lib/api-response'
+import { PERMISSIONS } from '@/lib/rbac'
+import { successResponse, withErrorHandler, ValidationError } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 const ImportRowSchema = z.object({
   companyName: z.string().min(1),
@@ -37,10 +33,9 @@ const ImportSchema = z.object({
 // Rows are processed independently: failures are reported per-row and do
 // not roll back successful ones.
 export const POST = withErrorHandler(async (req: Request) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.LEADS_IMPORT)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.LEADS_IMPORT)
 
   const body = await req.json()
   const parsed = ImportSchema.safeParse(body)

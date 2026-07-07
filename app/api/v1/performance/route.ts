@@ -1,11 +1,6 @@
 import { prisma } from '@/lib/db'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  extractOrgAndUserIds,
-  extractUserRole,
-} from '@/lib/api-response'
+import { successResponse, withErrorHandler } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
 
 // Resolves the ?days=7|30|90 / ?from=&to= query params (same convention as
 // the leads list filter) into a concrete [start, end) window. No params at
@@ -29,10 +24,9 @@ function resolveCallWindow(url: URL): { start?: Date; end: Date } {
 // numbers. Team-wide stats are returned only for admins (scope: "team");
 // everyone else gets exactly one row - their own (scope: "own").
 export const GET = withErrorHandler(async (req: Request) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  const role = extractUserRole(req.headers) ?? 'user'
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  const role = ctx.role
   const isAdmin = role === 'admin'
 
   const users = isAdmin

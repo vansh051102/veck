@@ -1,17 +1,17 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { assertTransitionAllowed, calculateSlaDeadline } from '@/lib/workflow'
 import { SendQuoteSchema } from '@/lib/validation'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
+import { PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
-  UnauthorizedError,
   NotFoundError,
   ValidationError,
   ConflictError,
-  extractOrgAndUserIds,
 } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 interface Params {
   params: { id: string }
@@ -22,13 +22,14 @@ interface Params {
 // (subject to the same gating rules as PUT /leads/:id/stage) so sales reps
 // don't have to make two separate calls for the common happy path.
 export const POST = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.QUOTES_SEND)
+  const ctx = await validateRequest(req)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.QUOTES_SEND
+  )
 
   const quote = await prisma.quote.findFirst({
-    where: { id: params.id, orgId },
+    where: { id: params.id, orgId: ctx.orgId },
     include: { lead: true },
   })
   if (!quote) throw new NotFoundError('Quote')
@@ -49,7 +50,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
   // Qualified (idempotency: sending a second quote shouldn't re-trigger it).
   const shouldAdvanceStage = lead.stage === 'Qualified'
   if (shouldAdvanceStage) {
-    await assertTransitionAllowed(lead, 'Quote Sent')
+    assertTransitionAllowed(lead, 'Quote Sent')
   }
 
   const result = await prisma.$transaction(async (tx) => {
@@ -69,7 +70,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
         timelineId: timeline.id,
         type: 'quote_sent',
         title: `Quote ${quote.quoteNumber} sent to ${parsed.data.recipientEmail}`,
-        createdBy: userId,
+        createdBy: ctx.userId,
       },
     })
 
@@ -80,7 +81,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
         data: {
           stage: 'Quote Sent',
           stageChangedAt: now,
-          stageChangedBy: userId,
+          stageChangedBy: ctx.userId,
           slaCreatedAt: now,
           slaDeadline: calculateSlaDeadline('Quote Sent', now),
           slaBreached: false,
@@ -93,7 +94,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
           type: 'stage_changed',
           title: 'Stage changed: Qualified → Quote Sent',
           metadata: { oldStage: 'Qualified', newStage: 'Quote Sent', trigger: 'quote_sent' },
-          createdBy: userId,
+          createdBy: ctx.userId,
         },
       })
     }
@@ -101,7 +102,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
     return { updatedQuote, updatedLead }
   })
 
-  await logAudit(orgId, userId, 'SEND', 'Quote', quote.id, quote.quoteNumber, {
+  await logAudit(ctx.orgId, ctx.userId, 'SEND', 'Quote', quote.id, quote.quoteNumber, {
     recipientEmail: parsed.data.recipientEmail,
   })
 

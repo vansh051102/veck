@@ -1,13 +1,7 @@
 import { prisma } from '@/lib/db'
 import { buildOwnershipFilter } from '@/lib/rbac'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  extractOrgAndUserIds,
-  extractUserRole,
-  extractUserDepartment,
-} from '@/lib/api-response'
+import { successResponse, withErrorHandler } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
 
 // Averages the Qualified -> Quote Sent gap across the org from STAGE_CHANGE
 // audit entries (lib/auth.ts logAudit, written by the stage-change route).
@@ -49,11 +43,10 @@ async function computeAvgQualifiedToQuoteSentHours(orgId: string): Promise<numbe
 // Ownership-filtered like /api/v1/analytics, plus role-specific extras
 // consumed by the per-role dashboards under app/(app)/dashboards/.
 export const GET = withErrorHandler(async (req: Request) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  const role = extractUserRole(req.headers) ?? 'admin'
-  const department = extractUserDepartment(req.headers)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  const role = ctx.role
+  const department = ctx.department
 
   const ownershipFilter = buildOwnershipFilter(userId, role, department, 'leads')
   const leadsWhere = { orgId, ...ownershipFilter }

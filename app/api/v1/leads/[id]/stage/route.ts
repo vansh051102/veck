@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { assertTransitionAllowed, calculateSlaDeadline } from '@/lib/workflow'
 import { createSopChecklistsForStage } from '@/lib/sop-checklists'
 import { createFollowUpSchedule } from '@/lib/follow-up'
@@ -7,13 +7,12 @@ import { UpdateLeadStageSchema } from '@/lib/validation'
 import {
   successResponse,
   withErrorHandler,
-  UnauthorizedError,
   NotFoundError,
   ValidationError,
-  extractOrgAndUserIds,
-  extractUserRole,
 } from '@/lib/api-response'
-import { requirePermission, canAccessLead, PERMISSIONS } from '@/lib/rbac'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 
 interface Params {
   params: { id: string }
@@ -21,17 +20,17 @@ interface Params {
 
 // PUT /api/v1/leads/:id/stage - Move a lead through the workflow, with gating
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.LEADS_EDIT)
+  const ctx = await validateRequest(req)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.LEADS_EDIT
+  )
 
-  const role = extractUserRole(req.headers)
-  if (!await canAccessLead(userId, role || 'admin', params.id)) {
+  if (!await canAccessLead(ctx.userId, ctx.role, params.id)) {
     throw new NotFoundError('Lead')
   }
 
-  const lead = await prisma.lead.findFirst({ where: { id: params.id, orgId } })
+  const lead = await prisma.lead.findFirst({ where: { id: params.id, orgId: ctx.orgId } })
   if (!lead) throw new NotFoundError('Lead')
 
   const body = await req.json()
@@ -43,14 +42,14 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const fromStage = lead.stage
 
   // Validates legality of transition + gating rules (activities, checklists, reason)
-  await assertTransitionAllowed(lead, toStage, reason)
+  assertTransitionAllowed(lead, toStage, reason)
 
   // Optional handover: assign as part of the transition (marketing → sales
   // at Qualified). Assignee must be an active user in the same org.
   let assignee: { id: string; fullName: string } | null = null
   if (assignedToId) {
     assignee = await prisma.user.findFirst({
-      where: { id: assignedToId, orgId, status: 'active' },
+      where: { id: assignedToId, orgId: ctx.orgId, status: 'active' },
       select: { id: true, fullName: true },
     })
     if (!assignee) throw new ValidationError('Assignee not found or inactive')
@@ -65,7 +64,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
       data: {
         stage: toStage,
         stageChangedAt: now,
-        stageChangedBy: userId,
+        stageChangedBy: ctx.userId,
         slaCreatedAt: now,
         slaDeadline: calculateSlaDeadline(toStage, now),
         slaBreached: false,
@@ -84,7 +83,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 
     // SOP Step 4: schedule the 6-day daily follow-up when a quote goes out
     if (toStage === 'Quote Sent') {
-      await createFollowUpSchedule(tx, { leadId: lead.id, orgId, createdBy: userId, from: now })
+      await createFollowUpSchedule(tx, { leadId: lead.id, orgId: ctx.orgId, createdBy: ctx.userId, from: now })
     }
 
     const timeline = await tx.timeline.upsert({
@@ -102,14 +101,14 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
           : `Stage changed: ${fromStage} → ${toStage}`,
         description: reason,
         metadata: { oldStage: fromStage, newStage: toStage, reason, assignedToId: assignee?.id },
-        createdBy: userId,
+        createdBy: ctx.userId,
       },
     })
 
     return result
   })
 
-  await logAudit(orgId, userId, 'STAGE_CHANGE', 'Lead', updated.id, updated.companyName, {
+  await logAudit(ctx.orgId, ctx.userId, 'STAGE_CHANGE', 'Lead', updated.id, updated.companyName, {
     fromStage,
     toStage,
     reason,

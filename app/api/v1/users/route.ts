@@ -1,14 +1,9 @@
 import { prisma } from '@/lib/db'
 import { supabaseAdmin, getOrganizationUsers } from '@/lib/auth'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  ValidationError,
-  ConflictError,
-  extractOrgAndUserIds,
-} from '@/lib/api-response'
+import { PERMISSIONS } from '@/lib/rbac'
+import { successResponse, withErrorHandler, ValidationError, ConflictError } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 import { z } from 'zod'
 
 const CreateUserSchema = z.object({
@@ -24,10 +19,9 @@ const CreateUserSchema = z.object({
 
 // GET /api/v1/users - List users in the caller's org (for assignment pickers etc.)
 export const GET = withErrorHandler(async (req) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.USERS_READ)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.USERS_READ)
 
   const users = await getOrganizationUsers(orgId)
   const activeUsers = users.filter((u) => u.status === 'active')
@@ -37,10 +31,9 @@ export const GET = withErrorHandler(async (req) => {
 
 // POST /api/v1/users - Create a new user in the organization
 export const POST = withErrorHandler(async (req) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.USERS_CREATE)
+  const ctx = await validateRequest(req)
+  const { orgId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.USERS_CREATE)
 
   const body = await req.json()
   const parsed = CreateUserSchema.safeParse(body)

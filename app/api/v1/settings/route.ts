@@ -1,15 +1,11 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import { logAudit } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { LEAD_STAGES } from '@/lib/validation'
-import { requirePermission, PERMISSIONS } from '@/lib/rbac'
-import {
-  successResponse,
-  withErrorHandler,
-  UnauthorizedError,
-  ValidationError,
-  extractOrgAndUserIds,
-} from '@/lib/api-response'
+import { PERMISSIONS } from '@/lib/rbac'
+import { successResponse, withErrorHandler, ValidationError } from '@/lib/api-response'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
 
 const UpdateSettingsSchema = z.object({
   autoAssignmentEnabled: z.boolean().optional(),
@@ -21,9 +17,8 @@ const UpdateSettingsSchema = z.object({
 
 // GET /api/v1/settings - Org settings (created with defaults on first read)
 export const GET = withErrorHandler(async (req: Request) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
 
   const settings =
     (await prisma.settings.findUnique({ where: { orgId } })) ??
@@ -40,10 +35,9 @@ export const GET = withErrorHandler(async (req: Request) => {
 
 // PUT /api/v1/settings - Update org settings (requires SETTINGS_EDIT permission)
 export const PUT = withErrorHandler(async (req: Request) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.SETTINGS_EDIT)
+  const ctx = await validateRequest(req)
+  const { orgId, userId } = ctx
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.SETTINGS_EDIT)
 
   const body = await req.json()
   const parsed = UpdateSettingsSchema.safeParse(body)
