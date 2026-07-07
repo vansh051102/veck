@@ -86,6 +86,7 @@ export const GET = withErrorHandler(async (req) => {
   const stage = url.searchParams.get('stage')
   const priority = url.searchParams.get('priority')
   const assignedToId = url.searchParams.get('assignedToId')
+  const slaBreached = url.searchParams.get('slaBreached')
   const search = url.searchParams.get('search')
   const days = url.searchParams.get('days') // quick time-range filter: 7 / 30 / 90
   const from = url.searchParams.get('from') // custom range (ISO date)
@@ -119,6 +120,7 @@ export const GET = withErrorHandler(async (req) => {
     ...(stage && { stage }),
     ...(priority && { priority }),
     ...(assignedToId && { assignedToId }),
+    ...(slaBreached === 'true' && { slaBreached: true }),
     ...((days || from || to) && {
       createdAt: {
         ...(days && { gte: new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000) }),

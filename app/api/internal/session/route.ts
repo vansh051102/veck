@@ -30,6 +30,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
+  // Self-service email changes (see app/(app)/profile/page.tsx) go through
+  // Supabase's own confirm-by-link flow, so authUser.email only updates once
+  // the user clicks the confirmation link. This runs on effectively every
+  // authenticated request, so it's the earliest safe point to mirror the
+  // confirmed change into our own User row — no webhook needed. Wrapped so
+  // a rare unique-constraint collision can't break session resolution.
+  if (authUser.email && user.email !== authUser.email) {
+    try {
+      await prisma.user.update({ where: { id: user.id }, data: { email: authUser.email } })
+    } catch (err) {
+      console.error('Failed to sync confirmed email change:', err)
+    }
+  }
+
   return NextResponse.json({
     id: user.id,
     orgId: user.orgId,

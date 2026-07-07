@@ -82,6 +82,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.LEADS_CREATE,
     PERMISSIONS.LEADS_READ,
     PERMISSIONS.LEADS_EDIT,
+    PERMISSIONS.LEADS_IMPORT,
     PERMISSIONS.CONTACTS_CREATE,
     PERMISSIONS.CONTACTS_READ,
     PERMISSIONS.CONTACTS_EDIT,
@@ -96,6 +97,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.LEADS_CREATE,
     PERMISSIONS.LEADS_READ,
     PERMISSIONS.LEADS_EDIT,
+    PERMISSIONS.LEADS_IMPORT,
     PERMISSIONS.CONTACTS_CREATE,
     PERMISSIONS.CONTACTS_READ,
     PERMISSIONS.CONTACTS_EDIT,
@@ -271,25 +273,19 @@ export function buildOwnershipFilter(
       return {}
 
     case 'marketing_manager':
-      // See all leads created by marketing department
+      // See all leads assigned to marketing department
       if (resource === 'leads') {
-        return { createdBy: { department: 'Marketing' } }
-      }
-      if (resource === 'contacts') {
-        return { createdById: { in: [] } } // Will be populated with marketing user IDs
+        return { assignedTo: { department: 'Marketing' } }
       }
       return {}
 
     case 'marketing_executive':
-      // See only leads they created
+      // See only leads assigned to them
       if (resource === 'leads') {
-        return { createdById: userId }
-      }
-      if (resource === 'contacts') {
-        return { createdById: userId }
+        return { assignedToId: userId }
       }
       if (resource === 'activities') {
-        return { createdBy: userId }
+        return { lead: { assignedToId: userId } }
       }
       return {}
 
@@ -360,15 +356,15 @@ export async function canAccessLead(
 
   switch (role) {
     case 'marketing_manager':
-      // Can access any lead created by marketing
-      const creator = await prisma.user.findUnique({
-        where: { id: lead.createdById },
+      // Can access any lead assigned to marketing
+      const assigneeDept = await prisma.user.findUnique({
+        where: { id: lead.assignedToId ?? '' },
         select: { department: true },
       })
-      return creator?.department === 'Marketing'
+      return assigneeDept?.department === 'Marketing'
 
     case 'marketing_executive':
-      return lead.createdById === userId
+      return lead.assignedToId === userId
 
     case 'sales_manager':
       // Can access any lead assigned to sales

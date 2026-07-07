@@ -4,23 +4,7 @@ Last updated: 2026-07-07 (Phase 0 re-audited against `c952042` RBAC commit)
 
 Status key: **[DONE]** verified in code · **[PARTIAL]** some scaffolding exists but incomplete/not wired up · **[NOT STARTED]** no evidence in code. Verified against the actual codebase in this project on 2026-07-05.
 
-## Team directory (reference only — do not hardcode in app logic)
-
-RBAC must be driven by a **Role** field on the user record, not by name or email checks in code. Names/emails below are for QA and permission-testing reference only.
-
-| Name | Phone | Role | Email |
-|---|---|---|---|
-| Saqlain Pasha | 89716 06057 | Purchase | veckteam03@gmail.com |
-| Priyanka G | 99801 35557 | Sales / Purchase | veckteam60@gmail.com |
-| Harish | 87926 86668 | Sales | veckteam06@gmail.com |
-| Anirudh | 96323 32021 | Marketing | veckteam05@gmail.com |
-| Priyanka K | 72042 21644 | Sales / Purchase | veckteam52@gmail.com |
-| Vansh G | 8758751807 | Sales | vanshgupta0511@gmail.com |
-| Vansh Demo | 9841030307 | Admin | vansh051102@gmail.com |
-| Nalin G | 9341760607 | Admin | info@veckcompany.com |
-| Nalin Demo | 7019709753 | Admin | nalingupta.1975@yahoo.co.in |
-
-Roles in the system: **Admin, Sales, Purchase, Sales/Purchase (dual), Marketing**. Every visibility rule below (stages, dashboards, tabs, filters, buttons) should resolve against these five roles, not against individual users. Adding/removing a person should never require a code change.
+Roles in the system: **Admin, Sales, Purchase, Sales/Purchase (dual), Marketing**. Every visibility rule below (stages, dashboards, tabs, filters, buttons) should resolve against these roles, not against individual users. Adding/removing a person should never require a code change.
 
 Where a specific name (Saqlain, Anirudh, Priyanka, Vansh, Harish, Nalin, etc.) appears in a backlog item below, it's there only because that's who reported the issue or whose account was used to test it — it identifies the **role** to build against, not a user to hardcode. Any logic implemented for "Saqlain's tab" should really be "the Purchase role's tab," and so on, so it keeps working correctly if that person changes roles or leaves.
 
@@ -32,8 +16,8 @@ Everything downstream (stage visibility, dashboards, performance tabs, import/ex
 
 1. [DONE] Clean up RBAC and team management properly — single source of truth for role → permission mapping. As of `c952042`: `lib/rbac.ts` defines `PERMISSIONS`/`ROLE_PERMISSIONS`, `Role.permissions` (Json) is the real source of truth per-org, all 28 API routes call `requirePermission()`/`requireAnyPermission()`, and `buildOwnershipFilter()`/`canAccessLead()` scope queries by role+department+ownership. `middleware.ts` still only does session/admin-route/active-status checks, but that's now correct — fine-grained permission checks live in the route handlers, not middleware.
 2. [DONE] Fix job title / "Workspace Owner" label showing incorrectly for the Purchase role. No hardcoded "Workspace Owner" string exists anywhere in the codebase now; `designation` is a free-text field on `User`, set explicitly in Settings and rendered as-is in the topbar (`components/topbar.tsx`) and dashboard header — resolves from the role/user record, not a hardcoded label.
-3. [NOT STARTED] Add nalingupta.1975@yahoo.co.in as a member/owner (Admin role, per table above). This is a data/seed action, not a code gap — user management UI to do it now exists in Settings.
-4. [PARTIAL] Role access review — confirm each of the 5 roles maps to the correct permission set end to end. Code gap found: the implemented role set is `admin, marketing_manager, marketing_executive, sales_manager, sales_executive, purchase` — there is no combined **"Sales / Purchase"** role, even though the team directory above has two people (Priyanka G, Priyanka K) who need dual Sales+Purchase access. Today they'd have to be assigned one or the other, losing permissions/visibility from the other side. Needs either a real dual role or a way to grant a user permissions from two roles.
+3. [NOT STARTED] Add the second Admin user as a member/owner (Admin role). This is a data/seed action, not a code gap — user management UI to do it now exists in Settings.
+4. [PARTIAL] Role access review — confirm each of the 5 roles maps to the correct permission set end to end. Code gap found: the implemented role set is `admin, marketing_manager, marketing_executive, sales_manager, sales_executive, purchase` — there is no combined **"Sales / Purchase"** role, even though some users need dual Sales+Purchase access. Today they'd have to be assigned one or the other, losing permissions/visibility from the other side. Needs either a real dual role or a way to grant a user permissions from two roles.
 5. [DONE] Only the stages relevant to a user's role should appear in their stage dropdown/upper navigation. `lib/lead-stages.ts:visibleStagesForRole()` returns `['Qualified', 'Quote Sent']` for `purchase` and all 7 stages for everyone else; wired into both `app/(app)/leads/page.tsx` and `app/(app)/dashboard/page.tsx` stage tabs.
 6. [PARTIAL] Stage configuration by role: e.g. Qualified → Quote Sent belongs to Purchase; all other stage transitions belong to Sales. The *visibility* half is done (see #5), and `buildOwnershipFilter()`/`canAccessLead()` scope Purchase to leads in `Qualified`/`Quote Sent`. But stage-transition permissions themselves aren't separately gated — no check stops a Sales user from also performing the Qualified→Quote Sent transition. Still hardcoded to the two named stages rather than configurable data.
 7. [DONE] Export function restricted to Admin only. `LEADS_EXPORT` is not granted to any role in `ROLE_PERMISSIONS` except admin's wildcard `'*'`, and `app/api/v1/leads/export/route.ts` calls `requirePermission(userId, PERMISSIONS.LEADS_EXPORT)` — effectively admin-only today, driven by data not a special-cased check.

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { RecentActivityCard } from '@/components/analytics/recent-activity-card'
+import { QuickActionsCard } from '@/components/analytics/quick-actions-card'
 
 interface Kpis {
   totalLeads: number
@@ -90,6 +92,8 @@ export default function AnalyticsPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Analytics</h1>
+
+      <QuickActionsCard showTeamPerformanceLink={salespersonStats.length > 1} />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -179,8 +183,10 @@ export default function AnalyticsPage() {
         </Card>
       </div>
 
+      <RecentActivityCard />
+
       {/* Per-salesperson table */}
-      <Card>
+      <Card id="team-performance">
         <CardHeader><CardTitle>Team Performance</CardTitle></CardHeader>
         <CardContent>
           {salespersonStats.length === 0 ? (

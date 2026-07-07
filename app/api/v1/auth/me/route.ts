@@ -50,6 +50,7 @@ export const GET = withErrorHandler(async (req) => {
       status: user.status,
       lastLogin: user.lastLogin,
       avatarUrl: user.avatarUrl,
+      defaultDashboard: user.defaultDashboard,
       permissions,
     },
     org: user.org,

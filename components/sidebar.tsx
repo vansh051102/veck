@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { BarChart2, LayoutDashboard, Users, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/use-current-user'
+import { dashboardRouteForRole } from '@/lib/dashboard-routes'
 
 interface NavItem {
   href: string
@@ -13,19 +14,24 @@ interface NavItem {
   permissions: string[] // empty = everyone can see
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permissions: [] },
-  { href: '/leads', label: 'Leads', icon: Users, permissions: ['leads:read'] },
-  { href: '/analytics', label: 'Analytics', icon: BarChart2, permissions: ['analytics:read'] },
-  { href: '/settings', label: 'Settings', icon: Settings, permissions: ['settings:edit'] },
-]
-
 export function Sidebar() {
   const pathname = usePathname()
   const user = useCurrentUser()
 
+  const navItems: NavItem[] = [
+    {
+      href: dashboardRouteForRole(user?.role ?? 'admin'),
+      label: 'Dashboard',
+      icon: LayoutDashboard,
+      permissions: [],
+    },
+    { href: '/leads', label: 'Leads', icon: Users, permissions: ['leads:read'] },
+    { href: '/analytics', label: 'Analytics', icon: BarChart2, permissions: ['analytics:read'] },
+    { href: '/settings', label: 'Settings', icon: Settings, permissions: ['settings:edit'] },
+  ]
+
   // Filter nav items based on user permissions
-  const visibleItems = NAV_ITEMS.filter((item) => {
+  const visibleItems = navItems.filter((item) => {
     if (item.permissions.length === 0) return true
     if (!user) return false
     if (user.permissions.includes('*')) return true

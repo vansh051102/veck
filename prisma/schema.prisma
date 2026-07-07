@@ -215,6 +215,8 @@ model Contact {
   phone             String
   alternatePhone    String?
   designation       String?
+  gstNumber         String?
+  city              String?
 
   // Source & Metadata
   source            String    // Website, LinkedIn, Referral, Email, Other

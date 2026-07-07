@@ -15,6 +15,8 @@ export interface CreateLeadInput {
   externalId?: string
   tags?: string[]
   createdById: string
+  /** Explicit assignee (e.g. from an import row) — bypasses auto-assignment when set. */
+  assignedToId?: string
 }
 
 /**
@@ -28,8 +30,9 @@ export async function createLeadWithDefaults(input: CreateLeadInput) {
   const stage = 'New Lead'
 
   return prisma.$transaction(async (tx) => {
-    // Auto-assignment (round-robin by capacity) when enabled in Settings
-    const assignedToId = await pickAssignee(tx, input.orgId)
+    // Explicit assignee wins; otherwise fall back to auto-assignment
+    // (round-robin by capacity) when enabled in Settings.
+    const assignedToId = input.assignedToId ?? (await pickAssignee(tx, input.orgId))
 
     const created = await tx.lead.create({
       data: {

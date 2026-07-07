@@ -25,6 +25,18 @@ const HEADER_MAP: Record<string, string> = {
   priority: 'priority',
   source: 'source',
   notes: 'notes',
+  requirement: 'notes',
+  'requirement / description': 'notes',
+  description: 'notes',
+  gst: 'gstNumber',
+  'gst number': 'gstNumber',
+  gstnumber: 'gstNumber',
+  city: 'city',
+  tag: 'tag',
+  tags: 'tag',
+  'assigned to': 'assignedToEmail',
+  assignedto: 'assignedToEmail',
+  'assigned to email': 'assignedToEmail',
 }
 
 interface ImportResult {
@@ -95,7 +107,9 @@ export function LeadsImportModal({
         <p className="text-sm text-muted-foreground">
           Required columns: <code>Company</code>, <code>First Name</code>, <code>Last Name</code>,{' '}
           <code>Email</code>, <code>Phone</code>. Optional: <code>Priority</code>,{' '}
-          <code>Source</code>, <code>Notes</code>. Max 500 rows per import.
+          <code>Source</code>, <code>Tag</code>, <code>GST</code>, <code>City</code>,{' '}
+          <code>Assigned To</code> (email), <code>Requirement / Description</code>. Max 500 rows
+          per import.
         </p>
 
         <div className="flex flex-col gap-1.5">

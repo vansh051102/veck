@@ -21,6 +21,9 @@ interface MeResponse {
 // Module-level cache so multiple components share one /auth/me request.
 let cached: CurrentUser | null = null
 let inflight: Promise<CurrentUser | null> | null = null
+// Mounted useCurrentUser() consumers re-fetch when notified (see
+// invalidateCurrentUser) so profile edits propagate without a page reload.
+const listeners = new Set<() => void>()
 
 async function fetchCurrentUser(): Promise<CurrentUser | null> {
   if (cached) return cached
@@ -39,16 +42,31 @@ async function fetchCurrentUser(): Promise<CurrentUser | null> {
   return inflight
 }
 
+/**
+ * Clears the module-level cache and tells every mounted useCurrentUser()
+ * consumer to re-fetch /auth/me. Call after a self-service profile update
+ * so the topbar/sidebar reflect changes (e.g. a new name) without a reload.
+ */
+export function invalidateCurrentUser(): void {
+  cached = null
+  listeners.forEach((refetch) => refetch())
+}
+
 export function useCurrentUser(): CurrentUser | null {
   const [user, setUser] = useState<CurrentUser | null>(cached)
 
   useEffect(() => {
     let cancelled = false
-    fetchCurrentUser().then((u) => {
-      if (!cancelled) setUser(u)
-    })
+    function load() {
+      fetchCurrentUser().then((u) => {
+        if (!cancelled) setUser(u)
+      })
+    }
+    load()
+    listeners.add(load)
     return () => {
       cancelled = true
+      listeners.delete(load)
     }
   }, [])
 

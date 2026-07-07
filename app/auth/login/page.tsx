@@ -5,17 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { Button } from '@/components/ui/button'
-
-// Role-based default redirect paths
-const ROLE_DEFAULTS: Record<string, string> = {
-  admin: '/dashboard',
-  marketing_manager: '/leads',
-  marketing_executive: '/leads',
-  sales_manager: '/leads',
-  sales_executive: '/leads',
-  purchase: '/leads?stage=Qualified',
-  sales_purchase: '/leads',
-}
+import { dashboardRouteForRole } from '@/lib/dashboard-routes'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -55,7 +45,7 @@ export default function LoginPage() {
         })
         if (res.ok) {
           const { user } = await res.json()
-          const defaultPath = user.defaultDashboard || ROLE_DEFAULTS[user.role] || '/dashboard'
+          const defaultPath = user.defaultDashboard || dashboardRouteForRole(user.role)
           setLoading(false)
           router.push(defaultPath)
           router.refresh()

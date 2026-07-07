@@ -21,6 +21,10 @@ const ImportRowSchema = z.object({
   priority: z.enum(LEAD_PRIORITIES).optional(),
   source: z.string().optional(),
   notes: z.string().optional(),
+  gstNumber: z.string().optional(),
+  city: z.string().optional(),
+  tag: z.string().optional(),
+  assignedToEmail: z.string().email().optional(),
 })
 
 const ImportSchema = z.object({
@@ -44,6 +48,19 @@ export const POST = withErrorHandler(async (req: Request) => {
     throw new ValidationError('Invalid import data', parsed.error.flatten())
   }
 
+  // Resolve "assign to" emails to user IDs up front (one query instead of
+  // one per row). Unmatched emails just leave the lead unassigned.
+  const assigneeEmails = [
+    ...new Set(parsed.data.rows.map((r) => r.assignedToEmail).filter(Boolean) as string[]),
+  ]
+  const assignees = assigneeEmails.length
+    ? await prisma.user.findMany({
+        where: { orgId, email: { in: assigneeEmails }, status: 'active' },
+        select: { id: true, email: true },
+      })
+    : []
+  const assigneeIdByEmail = new Map(assignees.map((u) => [u.email, u.id]))
+
   let created = 0
   const errors: { row: number; message: string }[] = []
 
@@ -58,6 +75,9 @@ export const POST = withErrorHandler(async (req: Request) => {
           email: row.email,
           phone: row.phone,
           source: row.source || 'Other',
+          gstNumber: row.gstNumber,
+          city: row.city,
+          tags: row.tag ? [row.tag] : [],
           createdById: userId,
         },
         update: {}, // existing contact wins; import never overwrites
@@ -70,6 +90,7 @@ export const POST = withErrorHandler(async (req: Request) => {
         priority: row.priority,
         notes: row.notes,
         source: row.source || 'CSV Import',
+        assignedToId: row.assignedToEmail ? assigneeIdByEmail.get(row.assignedToEmail) : undefined,
         createdById: userId,
       })
       created++
