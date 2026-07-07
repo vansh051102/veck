@@ -1,6 +1,6 @@
 # VECK CRM — Feature & Bug Backlog (Dependency-Ordered)
 
-Last updated: 2026-07-05
+Last updated: 2026-07-07 (Phase 0 re-audited against `c952042` RBAC commit)
 
 Status key: **[DONE]** verified in code · **[PARTIAL]** some scaffolding exists but incomplete/not wired up · **[NOT STARTED]** no evidence in code. Verified against the actual codebase in this project on 2026-07-05.
 
@@ -30,17 +30,17 @@ Where a specific name (Saqlain, Anirudh, Priyanka, Vansh, Harish, Nalin, etc.) a
 
 Everything downstream (stage visibility, dashboards, performance tabs, import/export permissions) depends on this being solid. Building features on top of broken RBAC means redoing them later.
 
-1. [PARTIAL] Clean up RBAC and team management properly — single source of truth for role → permission mapping. `Role.permissions` Json field exists in schema, but `middleware.ts` only checks admin-vs-not-admin.
-2. [NOT STARTED] Fix job title / "Workspace Owner" label showing incorrectly for the Purchase role (reported against Saqlain's account — bug is in how the label resolves from role, not specific to that user; fix at the role level so it's correct for anyone assigned Purchase).
-3. [NOT STARTED] Add nalingupta.1975@yahoo.co.in as a member/owner (Admin role, per table above).
-4. [NOT STARTED] Role access review — confirm each of the 5 roles maps to the correct permission set end to end.
-5. [NOT STARTED] Only the stages relevant to a user's role should appear in their stage dropdown/upper navigation (Purchase sees Purchase-relevant stages, Sales sees Sales-relevant stages, etc.).
-6. [NOT STARTED] Stage configuration by role: e.g. Qualified → Quote Sent belongs to Purchase; all other stage transitions belong to Sales. Encode this as configurable data, not hardcoded per-user logic.
-7. [PARTIAL] Export function restricted to Admin only, in configuration settings. Export endpoint exists (`app/api/v1/leads/export/route.ts`) but role-gating unconfirmed.
-8. [NOT STARTED] Remove "Import" button from Sales role in the Contacts module.
-9. [NOT STARTED] Don't give general import access — allow manual lead creation only for roles without import rights.
-10. [NOT STARTED] Assignment rules not saving correctly — fix persistence bug.
-11. [NOT STARTED] When Admin clicks into any user whose role is Sales (e.g. Vansh G, Harish) or Sales/Purchase (e.g. Priyanka G, Priyanka K), it should land on that person's dashboard view for their role, not the admin view. Route by role, not by a per-user lookup table.
+1. [DONE] Clean up RBAC and team management properly — single source of truth for role → permission mapping. As of `c952042`: `lib/rbac.ts` defines `PERMISSIONS`/`ROLE_PERMISSIONS`, `Role.permissions` (Json) is the real source of truth per-org, all 28 API routes call `requirePermission()`/`requireAnyPermission()`, and `buildOwnershipFilter()`/`canAccessLead()` scope queries by role+department+ownership. `middleware.ts` still only does session/admin-route/active-status checks, but that's now correct — fine-grained permission checks live in the route handlers, not middleware.
+2. [DONE] Fix job title / "Workspace Owner" label showing incorrectly for the Purchase role. No hardcoded "Workspace Owner" string exists anywhere in the codebase now; `designation` is a free-text field on `User`, set explicitly in Settings and rendered as-is in the topbar (`components/topbar.tsx`) and dashboard header — resolves from the role/user record, not a hardcoded label.
+3. [NOT STARTED] Add nalingupta.1975@yahoo.co.in as a member/owner (Admin role, per table above). This is a data/seed action, not a code gap — user management UI to do it now exists in Settings.
+4. [PARTIAL] Role access review — confirm each of the 5 roles maps to the correct permission set end to end. Code gap found: the implemented role set is `admin, marketing_manager, marketing_executive, sales_manager, sales_executive, purchase` — there is no combined **"Sales / Purchase"** role, even though the team directory above has two people (Priyanka G, Priyanka K) who need dual Sales+Purchase access. Today they'd have to be assigned one or the other, losing permissions/visibility from the other side. Needs either a real dual role or a way to grant a user permissions from two roles.
+5. [DONE] Only the stages relevant to a user's role should appear in their stage dropdown/upper navigation. `lib/lead-stages.ts:visibleStagesForRole()` returns `['Qualified', 'Quote Sent']` for `purchase` and all 7 stages for everyone else; wired into both `app/(app)/leads/page.tsx` and `app/(app)/dashboard/page.tsx` stage tabs.
+6. [PARTIAL] Stage configuration by role: e.g. Qualified → Quote Sent belongs to Purchase; all other stage transitions belong to Sales. The *visibility* half is done (see #5), and `buildOwnershipFilter()`/`canAccessLead()` scope Purchase to leads in `Qualified`/`Quote Sent`. But stage-transition permissions themselves aren't separately gated — no check stops a Sales user from also performing the Qualified→Quote Sent transition. Still hardcoded to the two named stages rather than configurable data.
+7. [DONE] Export function restricted to Admin only. `LEADS_EXPORT` is not granted to any role in `ROLE_PERMISSIONS` except admin's wildcard `'*'`, and `app/api/v1/leads/export/route.ts` calls `requirePermission(userId, PERMISSIONS.LEADS_EXPORT)` — effectively admin-only today, driven by data not a special-cased check.
+8. [DONE] Remove "Import" button from Sales role in the Contacts module. Same mechanism as export: `LEADS_IMPORT` isn't granted to any non-admin role, and the import route is gated by `requirePermission`. Should confirm the UI actually hides the button via `PermissionGate` rather than just disabling the API (worth a quick visual check), but the access-control gap this item was about is closed.
+9. [DONE] Don't give general import access — allow manual lead creation only for roles without import rights. Falls out of #8: only admin has `LEADS_IMPORT`; every role that lacks it still has `LEADS_CREATE` for manual entry.
+10. [NOT STARTED] Assignment rules not saving correctly — fix persistence bug. `PUT /api/v1/settings` upserts `autoAssignmentEnabled`/`autoAssignmentRule` cleanly in `app/api/v1/settings/route.ts` — no bug found in the persistence path itself. Original report likely predates this or is a live UI repro; needs a fresh repro against current code before closing.
+11. [NOT STARTED] When Admin clicks into any user whose role is Sales or Sales/Purchase, it should land on that person's dashboard view for their role, not the admin view. No impersonation/"view as" feature exists anywhere in the codebase (searched for `impersonat`, `view-as`, `viewAs`). `ROLE_DEFAULTS` in `app/auth/login/page.tsx` only routes a user to their *own* default page at login time — there's no admin-clicks-into-user flow at all yet.
 
 ## Phase 1 — Critical bugs (data integrity & core workflows)
 
@@ -65,8 +65,8 @@ Fix before building new features on top of these flows.
 
 1. [NOT STARTED] Define bulk import data format (template/spec) before building the importer.
 2. [NOT STARTED] Bulk import with an "Assign to" field included.
-3. [PARTIAL] Round-robin auto-assignment engine, with the distribution parameter kept configurable (not fixed). `lib/auto-assign.ts` currently does least-open-leads assignment, not true round-robin, and isn't configurable despite a `Settings.autoAssignmentRule` field existing.
-4. [PARTIAL] Auto-assign leads when round-robin mode is active. Same caveat as above — assignment logic exists but isn't true round-robin.
+3. [DONE] Round-robin auto-assignment engine, with the distribution parameter kept configurable. `lib/auto-assign.ts:pickAssignee()` now supports both `least_open_leads` (default) and true `round_robin` (cycles active users in stable order after whoever got the last lead), selected via `Settings.autoAssignmentRule.rule_type` and editable in Settings UI.
+4. [DONE] Auto-assign leads when round-robin mode is active. Confirmed working via the same `pickAssignee()` path — when `rule_type: 'round_robin'`, the next active user after the most recent assignee gets the lead.
 5. [NOT STARTED] Consolidate email, WhatsApp, and call leads with the same requirement into a single lead record — test edge cases (same contact, different channel, near-simultaneous submission).
 6. [NOT STARTED] Auto-assign leads to the salesperson who already owns that customer, to increase visibility for the rep who's been working the account.
 7. [NOT STARTED] Clarify and log the distinction between "Owner" and "Sales member" on a lead (who created/owns it vs. who's actively working it).

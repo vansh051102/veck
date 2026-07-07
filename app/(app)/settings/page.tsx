@@ -556,6 +556,7 @@ export default function SettingsPage() {
                       <option value="sales_manager">Sales Manager</option>
                       <option value="sales_executive">Sales Executive</option>
                       <option value="purchase">Purchase / Quotation</option>
+                      <option value="sales_purchase">Sales / Purchase (dual)</option>
                     </select>
                   </div>
                   <div>

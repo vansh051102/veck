@@ -138,6 +138,26 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.CHECKLISTS_READ,
     PERMISSIONS.CHECKLISTS_EDIT,
   ],
+
+  // Dual role for staff who work both the sales pipeline and quotation/purchase
+  // side (e.g. Priyanka G, Priyanka K) — union of sales_executive + purchase.
+  sales_purchase: [
+    PERMISSIONS.LEADS_READ,
+    PERMISSIONS.LEADS_EDIT,
+    PERMISSIONS.CONTACTS_READ,
+    PERMISSIONS.ACTIVITIES_CREATE,
+    PERMISSIONS.ACTIVITIES_READ,
+    PERMISSIONS.QUOTES_CREATE,
+    PERMISSIONS.QUOTES_READ,
+    PERMISSIONS.QUOTES_EDIT,
+    PERMISSIONS.QUOTES_SEND,
+    PERMISSIONS.PURCHASE_REQUESTS_CREATE,
+    PERMISSIONS.PURCHASE_REQUESTS_READ,
+    PERMISSIONS.PURCHASE_REQUESTS_EDIT,
+    PERMISSIONS.CHECKLISTS_CREATE,
+    PERMISSIONS.CHECKLISTS_READ,
+    PERMISSIONS.CHECKLISTS_EDIT,
+  ],
 }
 
 // ============================================================================
@@ -300,6 +320,20 @@ export function buildOwnershipFilter(
       }
       return {}
 
+    case 'sales_purchase':
+      // See leads assigned to them (sales side) OR leads in the
+      // Qualified/Quote Sent stages regardless of assignee (purchase side).
+      if (resource === 'leads') {
+        return { OR: [{ assignedToId: userId }, { stage: { in: ['Qualified', 'Quote Sent'] } }] }
+      }
+      if (resource === 'activities') {
+        return { lead: { assignedToId: userId } }
+      }
+      if (resource === 'quotes' || resource === 'purchase_requests') {
+        return { OR: [{ lead: { assignedToId: userId } }, { lead: { stage: { in: ['Qualified', 'Quote Sent'] } } }] }
+      }
+      return {}
+
     default:
       // Unknown role — deny all
       return { id: '__DENY_ALL__' }
@@ -349,6 +383,9 @@ export async function canAccessLead(
 
     case 'purchase':
       return ['Qualified', 'Quote Sent'].includes(lead.stage)
+
+    case 'sales_purchase':
+      return lead.assignedToId === userId || ['Qualified', 'Quote Sent'].includes(lead.stage)
 
     default:
       return false

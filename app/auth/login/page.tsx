@@ -14,6 +14,7 @@ const ROLE_DEFAULTS: Record<string, string> = {
   sales_manager: '/leads',
   sales_executive: '/leads',
   purchase: '/leads?stage=Qualified',
+  sales_purchase: '/leads',
 }
 
 export default function LoginPage() {

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { prisma } from './db'
+import { seedDefaultRoles } from './seed-roles'
 
 export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,7 +54,10 @@ export async function signUp(
       include: { org: true },
     })
 
-    // 4. Create default settings
+    // 4. Seed default roles (admin, sales, purchase, etc.) for the new org
+    await seedDefaultRoles(org.id)
+
+    // 5. Create default settings
     await prisma.settings.create({
       data: {
         orgId: org.id,

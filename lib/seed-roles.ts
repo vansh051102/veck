@@ -56,6 +56,13 @@ const DEFAULT_ROLES: RoleDefinition[] = [
     hierarchyLevel: 0,
     permissions: ROLE_PERMISSIONS.purchase,
   },
+  {
+    name: 'sales_purchase',
+    description: 'Dual role: manage own sales leads and build quotations/purchase requests',
+    department: 'Sales',
+    hierarchyLevel: 0,
+    permissions: ROLE_PERMISSIONS.sales_purchase,
+  },
 ]
 
 // ============================================================================
