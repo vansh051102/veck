@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
-import { NEXT_STAGES } from '@/lib/lead-stages'
+import { otherStages } from '@/lib/lead-stages'
 import { LEAD_STAGES } from '@/lib/validation'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
@@ -49,8 +49,8 @@ export function LeadsKanban({ data, onChanged }: LeadsKanbanProps) {
             </div>
             <div className="flex min-h-[80px] flex-col gap-2 p-2">
               {leads.map((lead) => {
-                // Forward moves only; loss-path needs a reason (detail page)
-                const moves = (NEXT_STAGES[lead.stage] || []).filter(
+                // Any other stage is reachable; loss-path needs a reason (detail page)
+                const moves = otherStages(lead.stage).filter(
                   (s) => s !== 'Deal Lost' && s !== 'Disqualified'
                 )
                 return (

@@ -1,7 +1,6 @@
-import { prisma } from './db'
 import { ValidationError, ConflictError } from './api-response'
 import {
-  NEXT_STAGES,
+  ALL_STAGES,
   TERMINAL_STAGES,
   isTerminalStage,
   isValidDealLostReason,
@@ -14,16 +13,13 @@ export { TERMINAL_STAGES, isTerminalStage }
 // ============================================================================
 // LEAD WORKFLOW STATE MACHINE
 // ============================================================================
-// Stages: New Lead -> Contacted -> Qualified -> Quote Sent -> Closed Won
-// Any active stage can also move to Deal Lost or Disqualified (terminal).
-//
-// Trade-off: gating rules below check ALL of a lead's incomplete *required*
-// checklists rather than checklists scoped to a specific stage, because the
-// Checklist model has no `stage` field yet. This is simple and correct for
-// Phase 1 (checklists are created per-stage by convention, so "any required
-// checklist incomplete" effectively means "this stage's checklist isn't
-// done"), but if multiple stages ever have concurrent required checklists,
-// add a `stage` column to Checklist and scope the query to it.
+// Stage movement is unrestricted: anyone with access to a lead (see
+// canAccessLead in lib/rbac.ts) can move it to any other stage, in any
+// order, including reopening a terminal one — there is no required
+// sequence and no minimum-activity/checklist gate. The only structural
+// requirement left is a valid SOP reason when landing on Deal Lost or
+// Disqualified, since that's data capture (loss analytics) rather than
+// an access restriction.
 
 // SLA windows applied to the *new* stage the lead is entering.
 const SLA_WINDOW_MS: Record<string, number | null> = {
@@ -36,21 +32,19 @@ const SLA_WINDOW_MS: Record<string, number | null> = {
   Disqualified: null,
 }
 
-const MIN_ACTIVITIES_FOR_TRANSITION: Record<string, number> = {
-  'New Lead': 1, // moving out of New Lead requires at least 1 contact attempt
-  Contacted: 3, // moving out of Contacted requires at least 3 activities total
-}
-
 export function isValidTransition(fromStage: string, toStage: string): boolean {
-  if (fromStage === toStage) return false
-  const allowed = NEXT_STAGES[fromStage]
-  if (!allowed) throw new ValidationError(`Unknown stage: ${fromStage}`)
-  return allowed.includes(toStage)
+  if (!(ALL_STAGES as readonly string[]).includes(fromStage)) {
+    throw new ValidationError(`Unknown stage: ${fromStage}`)
+  }
+  if (!(ALL_STAGES as readonly string[]).includes(toStage)) {
+    throw new ValidationError(`Unknown stage: ${toStage}`)
+  }
+  return fromStage !== toStage
 }
 
 /**
- * Validates that a stage transition is structurally legal and that all
- * gating conditions (activity minimums, required checklists) are met.
+ * Validates that a stage transition is structurally legal (different,
+ * known stages) and that a valid reason is supplied for the loss path.
  * Throws ValidationError / ConflictError if the transition should be blocked.
  */
 export async function assertTransitionAllowed(
@@ -61,11 +55,7 @@ export async function assertTransitionAllowed(
   const fromStage = lead.stage
 
   if (!isValidTransition(fromStage, toStage)) {
-    throw new ConflictError(
-      `Cannot move lead from "${fromStage}" to "${toStage}". Allowed next stages: ${
-        NEXT_STAGES[fromStage]?.join(', ') || 'none (terminal stage)'
-      }`
-    )
+    throw new ConflictError(`Lead is already in stage "${fromStage}"`)
   }
 
   const isLossPath = toStage === 'Deal Lost' || toStage === 'Disqualified'
@@ -79,30 +69,6 @@ export async function assertTransitionAllowed(
         `Invalid reason "${reason}". Valid reasons: ${DEAL_LOST_REASONS.join(', ')}`
       )
     }
-    return // no other gating on the loss path
-  }
-
-  // Activity-count gating (checked against the stage being LEFT)
-  const minActivities = MIN_ACTIVITIES_FOR_TRANSITION[fromStage]
-  if (minActivities) {
-    const activityCount = await prisma.activity.count({ where: { leadId: lead.id } })
-    if (activityCount < minActivities) {
-      throw new ConflictError(
-        `Cannot leave stage "${fromStage}": requires at least ${minActivities} logged activit${
-          minActivities === 1 ? 'y' : 'ies'
-        } (found ${activityCount})`
-      )
-    }
-  }
-
-  // Required-checklist gating
-  const incompleteRequired = await prisma.checklist.count({
-    where: { leadId: lead.id, isRequired: true, completedAt: null },
-  })
-  if (incompleteRequired > 0) {
-    throw new ConflictError(
-      `Cannot leave stage "${fromStage}": ${incompleteRequired} required checklist(s) are still incomplete`
-    )
   }
 }
 

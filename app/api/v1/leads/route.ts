@@ -6,23 +6,22 @@ import {
   successResponse,
   paginatedResponse,
   withErrorHandler,
-  UnauthorizedError,
   NotFoundError,
   ValidationError,
   ConflictError,
-  extractOrgAndUserIds,
-  extractUserRole,
-  extractUserDepartment,
   getPaginationParams,
 } from '@/lib/api-response'
-import { requirePermission, buildOwnershipFilter, PERMISSIONS } from '@/lib/rbac'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
+import { buildOwnershipFilter, PERMISSIONS } from '@/lib/rbac'
 
 // POST /api/v1/leads - Create a lead (Step 1 of the workflow)
 export const POST = withErrorHandler(async (req) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.LEADS_CREATE)
+  const ctx = await validateRequest(req)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.LEADS_CREATE
+  )
 
   const body = await req.json()
   const parsed = CreateLeadSchema.safeParse(body)
@@ -33,7 +32,7 @@ export const POST = withErrorHandler(async (req) => {
 
   // Contact must belong to the same org
   const contact = await prisma.contact.findFirst({
-    where: { id: input.contactId, orgId },
+    where: { id: input.contactId, orgId: ctx.orgId },
   })
   if (!contact) throw new NotFoundError('Contact')
 
@@ -41,7 +40,7 @@ export const POST = withErrorHandler(async (req) => {
   // lead, surface the existing one instead of creating a second.
   const existingLead = await prisma.lead.findFirst({
     where: {
-      orgId,
+      orgId: ctx.orgId,
       contactId: input.contactId,
       stage: { notIn: ['Closed Won', 'Deal Lost', 'Disqualified'] },
     },
@@ -54,7 +53,7 @@ export const POST = withErrorHandler(async (req) => {
   }
 
   const lead = await createLeadWithDefaults({
-    orgId,
+    orgId: ctx.orgId,
     contactId: input.contactId,
     companyName: input.companyName,
     priority: input.priority,
@@ -62,23 +61,21 @@ export const POST = withErrorHandler(async (req) => {
     source: input.source,
     sourceDetails: input.sourceDetails,
     tags: input.tags,
-    createdById: userId,
+    createdById: ctx.userId,
   })
 
-  await logAudit(orgId, userId, 'CREATE', 'Lead', lead.id, lead.companyName)
+  await logAudit(ctx.orgId, ctx.userId, 'CREATE', 'Lead', lead.id, lead.companyName)
 
   return successResponse(lead, { statusCode: 201 })
 })
 
 // GET /api/v1/leads - List leads with pagination & filters
 export const GET = withErrorHandler(async (req) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.LEADS_READ)
-
-  const role = extractUserRole(req.headers)
-  const department = extractUserDepartment(req.headers)
+  const ctx = await validateRequest(req)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.LEADS_READ
+  )
 
   const url = new URL(req.url)
   const { page, limit, skip } = getPaginationParams(url.searchParams)
@@ -116,10 +113,10 @@ export const GET = withErrorHandler(async (req) => {
     throw new ValidationError(`Invalid contactOutcome filter: ${contactOutcome}`)
   }
 
-  const ownershipFilter = buildOwnershipFilter(userId, role || 'admin', department, 'leads')
+  const ownershipFilter = buildOwnershipFilter(ctx.userId, ctx.role, ctx.department, 'leads')
 
   const where = {
-    orgId,
+    orgId: ctx.orgId,
     ...ownershipFilter,
     ...(stage && { stage }),
     ...(priority && { priority }),

@@ -1,5 +1,6 @@
 import { signIn } from '@/lib/auth'
 import { successResponse, withErrorHandler, ValidationError } from '@/lib/api-response'
+import { authLimiter, rateLimitResponse } from '@/lib/rate-limit'
 import { z } from 'zod'
 
 const SignInSchema = z.object({
@@ -8,6 +9,10 @@ const SignInSchema = z.object({
 })
 
 export const POST = withErrorHandler(async (req) => {
+  // Rate limit: 10 sign-in attempts per minute per IP
+  const { allowed, retryAfter } = authLimiter.check(req)
+  if (!allowed) return rateLimitResponse(retryAfter)
+
   const body = await req.json()
 
   // Validate input

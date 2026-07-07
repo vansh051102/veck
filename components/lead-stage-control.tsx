@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
-import { NEXT_STAGES, DEAL_LOST_REASONS } from '@/lib/lead-stages'
+import { otherStages, DEAL_LOST_REASONS } from '@/lib/lead-stages'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { PermissionGate } from '@/components/permission-gate'
 import { useCurrentUser } from '@/lib/use-current-user'
 
@@ -31,7 +30,7 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const nextOptions = NEXT_STAGES[currentStage] || []
+  const nextOptions = otherStages(currentStage)
   const isLossPath = targetStage === 'Deal Lost' || targetStage === 'Disqualified'
   const isHandover = targetStage === 'Qualified'
   const isMarketing = me?.role.startsWith('marketing') ?? false
@@ -69,14 +68,6 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
     } finally {
       setLoading(false)
     }
-  }
-
-  if (nextOptions.length === 0) {
-    return (
-      <PermissionGate permission="leads:edit">
-        <Badge variant="default">Terminal stage — no further transitions</Badge>
-      </PermissionGate>
-    )
   }
 
   return (

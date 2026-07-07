@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
-import { NEXT_STAGES, isTerminalStage } from '@/lib/lead-stages'
+import { otherStages, isTerminalStage } from '@/lib/lead-stages'
 import { LEAD_PRIORITIES } from '@/lib/validation'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
@@ -144,10 +144,10 @@ export function LeadsTable({
     inlineUpdate(lead, () => api.put(`/leads/${lead.id}/assign`, { assignedToId }), 'Lead reassigned')
   }
 
-  // Inline stage options: forward transitions only. Loss-path moves (Deal
-  // Lost / Disqualified) require a reason, so those go through the detail page.
+  // Inline stage options: any other stage. Loss-path moves (Deal Lost /
+  // Disqualified) require a reason, so those go through the detail page.
   function inlineStageOptions(stage: string): string[] {
-    return (NEXT_STAGES[stage] || []).filter((s) => s !== 'Deal Lost' && s !== 'Disqualified')
+    return otherStages(stage).filter((s) => s !== 'Deal Lost' && s !== 'Disqualified')
   }
 
   function SortHeader({ column, children }: { column: SortBy; children: React.ReactNode }) {

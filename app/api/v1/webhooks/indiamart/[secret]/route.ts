@@ -2,34 +2,26 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { IndiaMartWebhookSchema, type IndiaMartLeadResponse } from '@/lib/validation'
+import { webhookLimiter, rateLimitResponse } from '@/lib/rate-limit'
 
 interface Params {
   params: { secret: string }
 }
 
-// Deterministic placeholder so leads from the same phone number (but no
-// email) resolve to the same Contact instead of creating a new one every
-// time IndiaMART pushes another lead for that buyer.
 function placeholderEmail(phone: string): string {
   const digits = phone.replace(/[^0-9]/g, '') || 'unknown'
   return `phone-${digits}@leads.indiamart.veck.internal`
 }
 
-async function resolveOrgId(): Promise<string | null> {
-  if (process.env.INDIAMART_ORG_ID) return process.env.INDIAMART_ORG_ID
-  // Single-tenant fallback: if there's exactly one org (the common case for
-  // this deployment), use it so the webhook works without extra config.
-  const org = await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } })
-  return org?.id ?? null
-}
-
-async function resolveSystemUserId(orgId: string): Promise<string | null> {
-  if (process.env.INDIAMART_SYSTEM_USER_ID) return process.env.INDIAMART_SYSTEM_USER_ID
-  // Attribute webhook-created records to the org's earliest user (typically
-  // the admin who signed up) since Lead/Contact.createdById is required and
-  // there's no logged-in user for an inbound webhook.
-  const user = await prisma.user.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
-  return user?.id ?? null
+function resolveRequiredEnv(key: string): string {
+  const value = process.env[key]
+  if (!value) {
+    throw new Error(
+      `Missing required environment variable: ${key}. ` +
+      `Configure INDIAMART_ORG_ID, INDIAMART_SYSTEM_USER_ID, and INDIAMART_WEBHOOK_SECRET.`
+    )
+  }
+  return value
 }
 
 async function findOrCreateContact(orgId: string, createdById: string, lead: IndiaMartLeadResponse) {
@@ -67,13 +59,31 @@ async function findOrCreateContact(orgId: string, createdById: string, lead: Ind
 // control instead, checked against INDIAMART_WEBHOOK_SECRET. It must be
 // listed in middleware.ts's PUBLIC_ROUTES.
 //
+// Requires the following environment variables:
+//   - INDIAMART_WEBHOOK_SECRET: The shared secret from IndiaMART
+//   - INDIAMART_ORG_ID: The organization ID to attach leads to
+//   - INDIAMART_SYSTEM_USER_ID: The user ID to attribute lead creation to
+//
 // IndiaMART deactivates the Push API integration if it doesn't see HTTP 200
 // for 48 continuous hours, so this always returns 200 for well-formed,
 // correctly-authenticated requests - including "already processed" (dedup)
 // and "org/user not configured yet" cases - reserving non-200 for auth
 // failures and malformed payloads, which ARE worth IndiaMART retrying/alerting on.
 export async function POST(req: Request, { params }: Params) {
-  if (!process.env.INDIAMART_WEBHOOK_SECRET || params.secret !== process.env.INDIAMART_WEBHOOK_SECRET) {
+  // Rate limit: 30 webhook calls per minute per IP
+  const { allowed, retryAfter } = webhookLimiter.check(req)
+  if (!allowed) return rateLimitResponse(retryAfter)
+
+  // Validate webhook secret — required, no fallback
+  let webhookSecret: string
+  try {
+    webhookSecret = resolveRequiredEnv('INDIAMART_WEBHOOK_SECRET')
+  } catch (error) {
+    console.error('IndiaMART webhook misconfigured:', error)
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
+  }
+
+  if (params.secret !== webhookSecret) {
     return NextResponse.json({ error: 'Invalid webhook secret' }, { status: 401 })
   }
 
@@ -92,24 +102,29 @@ export async function POST(req: Request, { params }: Params) {
   const lead = parsed.data.RESPONSE
 
   try {
-    // Dedup: IndiaMART's UNIQUE_QUERY_ID is the idempotency key. If this
-    // lead was already ingested (e.g. IndiaMART retried a push we did
-    // acknowledge, or this endpoint got called twice), skip silently.
+    // Dedup: IndiaMART's UNIQUE_QUERY_ID is the idempotency key
     const existingLead = await prisma.lead.findUnique({ where: { externalId: lead.UNIQUE_QUERY_ID } })
     if (existingLead) {
       return NextResponse.json({ success: true, status: 'duplicate_skipped', leadId: existingLead.id })
     }
 
-    const orgId = await resolveOrgId()
-    if (!orgId) {
-      console.error('IndiaMART webhook: no organization configured to attach leads to')
-      return NextResponse.json({ success: true, status: 'no_org_configured' })
-    }
+    // Resolve org and system user — required env vars, fail fast
+    const orgId = resolveRequiredEnv('INDIAMART_ORG_ID')
+    const systemUserId = resolveRequiredEnv('INDIAMART_SYSTEM_USER_ID')
 
-    const systemUserId = await resolveSystemUserId(orgId)
-    if (!systemUserId) {
-      console.error('IndiaMART webhook: no user found to attribute lead creation to')
-      return NextResponse.json({ success: true, status: 'no_user_configured' })
+    // Validate that org and user actually exist in DB
+    const [org, user] = await Promise.all([
+      prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } }),
+      prisma.user.findFirst({ where: { id: systemUserId, orgId }, select: { id: true } }),
+    ])
+
+    if (!org) {
+      console.error(`IndiaMART webhook: configured ORG_ID ${orgId} does not exist`)
+      return NextResponse.json({ error: 'Organization not found' }, { status: 500 })
+    }
+    if (!user) {
+      console.error(`IndiaMART webhook: configured SYSTEM_USER_ID ${systemUserId} not found in org ${orgId}`)
+      return NextResponse.json({ error: 'System user not found' }, { status: 500 })
     }
 
     const contact = await findOrCreateContact(orgId, systemUserId, lead)
@@ -130,7 +145,6 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ success: true, status: 'created', leadId: created.id }, { status: 201 })
   } catch (error) {
     console.error('IndiaMART webhook processing error:', error)
-    // A genuine internal error - worth letting IndiaMART retry.
     return NextResponse.json({ error: 'Internal processing error' }, { status: 500 })
   }
 }

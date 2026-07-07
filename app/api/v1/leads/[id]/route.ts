@@ -5,14 +5,13 @@ import { isTerminalStage } from '@/lib/lead-stages'
 import {
   successResponse,
   withErrorHandler,
-  UnauthorizedError,
   NotFoundError,
   ValidationError,
   ConflictError,
-  extractOrgAndUserIds,
-  extractUserRole,
 } from '@/lib/api-response'
-import { requirePermission, canAccessLead, PERMISSIONS } from '@/lib/rbac'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 
 interface Params {
   params: { id: string }
@@ -20,18 +19,18 @@ interface Params {
 
 // GET /api/v1/leads/:id - Get a single lead with full detail
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.LEADS_READ)
+  const ctx = await validateRequest(req)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.LEADS_READ
+  )
 
-  const role = extractUserRole(req.headers)
-  if (!await canAccessLead(userId, role || 'admin', params.id)) {
+  if (!await canAccessLead(ctx.userId, ctx.role, params.id)) {
     throw new NotFoundError('Lead')
   }
 
   const lead = await prisma.lead.findFirst({
-    where: { id: params.id, orgId },
+    where: { id: params.id, orgId: ctx.orgId },
     include: {
       contact: true,
       assignedTo: { select: { id: true, fullName: true, email: true } },
@@ -59,17 +58,17 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
 
 // PUT /api/v1/leads/:id - Update lead fields (not stage/assignment - use dedicated endpoints)
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.LEADS_EDIT)
+  const ctx = await validateRequest(req)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.LEADS_EDIT
+  )
 
-  const role = extractUserRole(req.headers)
-  if (!await canAccessLead(userId, role || 'admin', params.id)) {
+  if (!await canAccessLead(ctx.userId, ctx.role, params.id)) {
     throw new NotFoundError('Lead')
   }
 
-  const existing = await prisma.lead.findFirst({ where: { id: params.id, orgId } })
+  const existing = await prisma.lead.findFirst({ where: { id: params.id, orgId: ctx.orgId } })
   if (!existing) throw new NotFoundError('Lead')
 
   const body = await req.json()
@@ -83,7 +82,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     data: parsed.data,
   })
 
-  await logAudit(orgId, userId, 'UPDATE', 'Lead', lead.id, lead.companyName, parsed.data)
+  await logAudit(ctx.orgId, ctx.userId, 'UPDATE', 'Lead', lead.id, lead.companyName, parsed.data)
 
   return successResponse(lead)
 })
@@ -93,12 +92,13 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 // (Closed Won / Deal Lost / Disqualified) cannot be deleted, matching the
 // stage-change endpoint's terminal-stage protection.
 export const DELETE = withErrorHandler(async (req: Request, { params }: Params) => {
-  const ids = extractOrgAndUserIds(req.headers)
-  if (!ids) throw new UnauthorizedError('User context not found')
-  const { orgId, userId } = ids
-  await requirePermission(userId, PERMISSIONS.LEADS_DELETE)
+  const ctx = await validateRequest(req)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.LEADS_DELETE
+  )
 
-  const existing = await prisma.lead.findFirst({ where: { id: params.id, orgId } })
+  const existing = await prisma.lead.findFirst({ where: { id: params.id, orgId: ctx.orgId } })
   if (!existing) throw new NotFoundError('Lead')
 
   if (isTerminalStage(existing.stage)) {
@@ -117,7 +117,7 @@ export const DELETE = withErrorHandler(async (req: Request, { params }: Params) 
     },
   })
 
-  await logAudit(orgId, userId, 'DELETE', 'Lead', lead.id, lead.companyName)
+  await logAudit(ctx.orgId, ctx.userId, 'DELETE', 'Lead', lead.id, lead.companyName)
 
   return successResponse({ id: lead.id, deleted: true })
 })

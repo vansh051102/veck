@@ -6,16 +6,6 @@
 
 export const TERMINAL_STAGES = ['Closed Won', 'Deal Lost', 'Disqualified'] as const
 
-export const NEXT_STAGES: Record<string, string[]> = {
-  'New Lead': ['Contacted', 'Deal Lost', 'Disqualified'],
-  Contacted: ['Qualified', 'Deal Lost', 'Disqualified'],
-  Qualified: ['Quote Sent', 'Deal Lost', 'Disqualified'],
-  'Quote Sent': ['Closed Won', 'Deal Lost', 'Disqualified'],
-  'Closed Won': [],
-  'Deal Lost': [],
-  Disqualified: [],
-}
-
 export function isTerminalStage(stage: string): boolean {
   return (TERMINAL_STAGES as readonly string[]).includes(stage)
 }
@@ -51,6 +41,14 @@ export const ALL_STAGES = [
   'Deal Lost',
   'Disqualified',
 ] as const
+
+// Stage movement is unrestricted: anyone with access to a lead can move it
+// to any other stage (including reopening a terminal one) — there is no
+// required sequence and no minimum-activity/checklist gate. Returns every
+// stage except the one the lead is currently in.
+export function otherStages(currentStage: string): string[] {
+  return ALL_STAGES.filter((s) => s !== currentStage)
+}
 
 // Returns the stage tab labels a given role should see in the leads list nav.
 // Purchase staff only handle the Qualified → Quote Sent part of the funnel.
