@@ -33,11 +33,11 @@ Build a **lead management system that enforces VECK's 4-step sales SOP** through
 
 **Frontend:**
 - Dashboard: 4 metrics cards + stage tabs
-- Leads Table: TanStack Table with 8 columns (like a competitor)
+- Leads Table: TanStack Table with 8 columns (like Inspiration)
 - Lead Detail: Full view with timeline + checklists + activities
 - Forms: Activity creation, quote builder, purchase request
 - State: Zustand stores for leads, UI, forms
-- Styling: Tailwind CSS + shadcn/ui (match a competitor design)
+- Styling: Tailwind CSS + shadcn/ui (match Inspiration design)
 
 ### 📊 Data Model
 
@@ -94,7 +94,7 @@ Organization
 - Recent activity feed
 
 **Leads Page** (`app/leads/page.tsx`)
-- a competitor-like interface
+- Inspiration-like interface
 - Search + 5 time range filters + 8 stage tabs
 - Table with 8 columns:
   1. Checkbox (bulk select)
@@ -209,7 +209,7 @@ PUT    /api/v1/purchase-requests/:id        Update status
 - [x] SLA engine
 - [x] Checklist enforcement
 - [x] Dashboard component
-- [x] Leads table (a competitor-like)
+- [x] Leads table (Inspiration-like)
 - [x] Lead detail view
 - [x] Activity forms (4 types)
 - [x] Checklist UI
@@ -224,7 +224,7 @@ PUT    /api/v1/purchase-requests/:id        Update status
 ✅ Workflow validation preventing invalid transitions  
 ✅ Mandatory checklists blocking stage progression  
 ✅ SLA deadlines calculated and tracked  
-✅ UI matches a competitor design patterns  
+✅ UI matches Inspiration design patterns  
 ✅ All tests passing  
 ✅ Production deployment successful
 
@@ -799,7 +799,7 @@ Week 9-12: PHASE 3 - Analytics & AI
 - [x] Phase 1: All 4 SOP steps working
 - [x] Phase 1: Workflow validation preventing invalid transitions
 - [x] Phase 1: SLA tracking accurate
-- [x] Phase 1: UI matches a competitor design
+- [x] Phase 1: UI matches Inspiration design
 - [x] Phase 2: Complete order-to-cash
 - [x] Phase 2: Reports accurate
 - [x] Phase 3: AI engines deployed

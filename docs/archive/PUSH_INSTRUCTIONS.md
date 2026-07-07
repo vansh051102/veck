@@ -20,7 +20,7 @@ git push -u origin main
 
 When prompted for credentials:
 - **Username:** `vansh051102`
-- **Password/Token:** `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`
+- **Password/Token:** `[REDACTED — revoke this token immediately at https://github.com/settings/tokens and generate a new one]`
 
 ---
 
@@ -123,7 +123,7 @@ curl -X POST http://localhost:3000/api/v1/auth/signup \
 ### "fatal: could not read Username for 'https://github.com'"
 **Solution:** Use the token instead of password
 ```bash
-git remote set-url origin https://vansh051102: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@github.com/vansh051102/veck.git
+git remote set-url origin https://vansh051102:[YOUR_NEW_TOKEN]@github.com/vansh051102/veck.git
 git push -u origin main
 ```
 

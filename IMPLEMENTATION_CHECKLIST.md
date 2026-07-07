@@ -115,7 +115,7 @@
 - [ ] Responsive grid layout
 
 **Leads Page** (`app/leads/page.tsx`)
-- [ ] a competitor-style layout
+- [ ] Inspiration-style layout
 - [ ] Metrics bar (4 cards)
 - [ ] View toggle: List/Kanban
 - [ ] Time range filter buttons (All time, 7 days, 30 days, 4 months, Custom)
@@ -152,7 +152,7 @@
 - [ ] Error handling
 
 **Styling**
-- [ ] Match a competitor color scheme (dark green sidebar, light gray cards)
+- [ ] Match Inspiration color scheme (dark green sidebar, light gray cards)
 - [ ] Responsive design (desktop first)
 - [ ] Dark mode support (optional for Phase 1)
 - [ ] Tailwind CSS + shadcn/ui components
@@ -538,7 +538,7 @@
 - [ ] Workflow validation prevents invalid transitions
 - [ ] Checklists blocking stage progression
 - [ ] SLA tracking accurate
-- [ ] UI matches a competitor design
+- [ ] UI matches Inspiration design
 - [ ] <5% SLA breach rate in production
 
 ### Phase 2 Completion

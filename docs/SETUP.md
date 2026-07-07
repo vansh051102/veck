@@ -294,4 +294,4 @@ See [Next.js Deployment Docs](https://nextjs.org/docs/app/building-your-applicat
 - Check [docs](./docs) folder
 - Read [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)
 - Open [GitHub Issues](https://github.com/vansh051102/veck/issues)
-- Contact: vanshgupta0511@gmail.com
+- Contact: open a GitHub issue on the repository

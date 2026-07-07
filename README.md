@@ -120,4 +120,4 @@ Proprietary - All rights reserved
 
 ## 🤝 Support
 
-For questions or issues, reach out to vanshgupta0511@gmail.com
+For questions or issues, open a GitHub issue on the repository.
