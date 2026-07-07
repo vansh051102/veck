@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
-import { otherStages, isTerminalStage } from '@/lib/lead-stages'
+import { otherStages } from '@/lib/lead-stages'
 import { LEAD_PRIORITIES } from '@/lib/validation'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
@@ -266,7 +266,7 @@ export function LeadsTable({
                     {lead.contact ? `${lead.contact.firstName} ${lead.contact.lastName}` : '—'}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    {isTerminalStage(lead.stage) || stageOptions.length === 0 ? (
+                    {stageOptions.length === 0 ? (
                       <Badge variant={STAGE_VARIANT[lead.stage] || 'default'}>{lead.stage}</Badge>
                     ) : (
                       <select

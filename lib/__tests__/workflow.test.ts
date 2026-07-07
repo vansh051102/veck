@@ -9,16 +9,6 @@ import {
 import { ValidationError, ConflictError } from '../api-response'
 import type { Lead } from '@prisma/client'
 
-// Mock the Prisma client so gating logic can be tested without a real DB.
-jest.mock('../db', () => ({
-  prisma: {
-    activity: { count: jest.fn() },
-    checklist: { count: jest.fn() },
-  },
-}))
-
-import { prisma } from '../db'
-
 function makeLead(overrides: Partial<Lead> = {}): Lead {
   const now = new Date()
   return {
@@ -59,8 +49,8 @@ describe('isValidTransition', () => {
     expect(isValidTransition('New Lead', 'Contacted')).toBe(true)
   })
 
-  it('rejects skipping stages (New Lead -> Quote Sent)', () => {
-    expect(isValidTransition('New Lead', 'Quote Sent')).toBe(false)
+  it('allows skipping stages (New Lead -> Quote Sent) — movement is unrestricted', () => {
+    expect(isValidTransition('New Lead', 'Quote Sent')).toBe(true)
   })
 
   it('rejects a stage transitioning to itself', () => {
@@ -72,14 +62,15 @@ describe('isValidTransition', () => {
     expect(isValidTransition('Qualified', 'Disqualified')).toBe(true)
   })
 
-  it('rejects transitions out of terminal stages', () => {
+  it('allows reopening a terminal stage back to an active one', () => {
     for (const stage of TERMINAL_STAGES) {
-      expect(isValidTransition(stage, 'Contacted')).toBe(false)
+      expect(isValidTransition(stage, 'Contacted')).toBe(true)
     }
   })
 
-  it('throws for an unknown source stage', () => {
+  it('throws for an unknown source or target stage', () => {
     expect(() => isValidTransition('Not A Stage', 'Contacted')).toThrow(ValidationError)
+    expect(() => isValidTransition('Contacted', 'Not A Stage')).toThrow(ValidationError)
   })
 })
 
@@ -136,67 +127,40 @@ describe('isSlaBreached', () => {
 })
 
 describe('assertTransitionAllowed', () => {
-  const mockedPrisma = prisma as unknown as {
-    activity: { count: jest.Mock }
-    checklist: { count: jest.Mock }
-  }
-
-  beforeEach(() => {
-    mockedPrisma.activity.count.mockReset()
-    mockedPrisma.checklist.count.mockReset()
-  })
-
-  it('rejects structurally invalid transitions before checking gates', async () => {
+  it('rejects moving a lead to its current stage', () => {
     const lead = makeLead({ stage: 'New Lead' })
-    await expect(assertTransitionAllowed(lead, 'Quote Sent')).rejects.toThrow(ConflictError)
-    expect(mockedPrisma.activity.count).not.toHaveBeenCalled()
+    expect(() => assertTransitionAllowed(lead, 'New Lead')).toThrow(ConflictError)
   })
 
-  it('blocks New Lead -> Contacted with zero logged activities', async () => {
-    mockedPrisma.activity.count.mockResolvedValue(0)
+  it('allows New Lead -> Contacted with zero logged activities (no activity gate)', () => {
     const lead = makeLead({ stage: 'New Lead' })
-    await expect(assertTransitionAllowed(lead, 'Contacted')).rejects.toThrow(ConflictError)
+    expect(() => assertTransitionAllowed(lead, 'Contacted')).not.toThrow()
   })
 
-  it('allows New Lead -> Contacted once an activity is logged and no required checklists are open', async () => {
-    mockedPrisma.activity.count.mockResolvedValue(1)
-    mockedPrisma.checklist.count.mockResolvedValue(0)
+  it('allows skipping stages freely (New Lead -> Quote Sent)', () => {
     const lead = makeLead({ stage: 'New Lead' })
-    await expect(assertTransitionAllowed(lead, 'Contacted')).resolves.toBeUndefined()
+    expect(() => assertTransitionAllowed(lead, 'Quote Sent')).not.toThrow()
   })
 
-  it('blocks Contacted -> Qualified when a required checklist is incomplete', async () => {
-    mockedPrisma.activity.count.mockResolvedValue(5)
-    mockedPrisma.checklist.count.mockResolvedValue(1)
-    const lead = makeLead({ stage: 'Contacted' })
-    await expect(assertTransitionAllowed(lead, 'Qualified')).rejects.toThrow(ConflictError)
+  it('allows reopening a terminal lead back to an active stage', () => {
+    const lead = makeLead({ stage: 'Closed Won' })
+    expect(() => assertTransitionAllowed(lead, 'Contacted')).not.toThrow()
   })
 
-  it('blocks Contacted -> Qualified with fewer than 3 activities', async () => {
-    mockedPrisma.activity.count.mockResolvedValue(2)
-    mockedPrisma.checklist.count.mockResolvedValue(0)
-    const lead = makeLead({ stage: 'Contacted' })
-    await expect(assertTransitionAllowed(lead, 'Qualified')).rejects.toThrow(ConflictError)
-  })
-
-  it('requires a reason when moving to Disqualified', async () => {
+  it('requires a reason when moving to Disqualified', () => {
     const lead = makeLead({ stage: 'Qualified' })
-    await expect(assertTransitionAllowed(lead, 'Disqualified')).rejects.toThrow(ValidationError)
+    expect(() => assertTransitionAllowed(lead, 'Disqualified')).toThrow(ValidationError)
   })
 
-  it('allows moving to Disqualified with a valid SOP reason, skipping other gates', async () => {
+  it('allows moving to Disqualified with a valid SOP reason', () => {
     const lead = makeLead({ stage: 'Qualified' })
-    await expect(
-      assertTransitionAllowed(lead, 'Disqualified', 'Budget Issue')
-    ).resolves.toBeUndefined()
-    expect(mockedPrisma.activity.count).not.toHaveBeenCalled()
-    expect(mockedPrisma.checklist.count).not.toHaveBeenCalled()
+    expect(() => assertTransitionAllowed(lead, 'Disqualified', 'Budget Issue')).not.toThrow()
   })
 
-  it('rejects free-text loss reasons not in the SOP list', async () => {
+  it('rejects free-text loss reasons not in the SOP list', () => {
     const lead = makeLead({ stage: 'Qualified' })
-    await expect(
-      assertTransitionAllowed(lead, 'Disqualified', 'Budget cut')
-    ).rejects.toThrow(ValidationError)
+    expect(() => assertTransitionAllowed(lead, 'Disqualified', 'Budget cut')).toThrow(
+      ValidationError
+    )
   })
 })

@@ -6,7 +6,6 @@ import {
   isValidDealLostReason,
   DEAL_LOST_REASONS,
 } from './lead-stages'
-import type { Lead } from '@prisma/client'
 
 export { TERMINAL_STAGES, isTerminalStage }
 
@@ -47,11 +46,11 @@ export function isValidTransition(fromStage: string, toStage: string): boolean {
  * known stages) and that a valid reason is supplied for the loss path.
  * Throws ValidationError / ConflictError if the transition should be blocked.
  */
-export async function assertTransitionAllowed(
-  lead: Lead,
+export function assertTransitionAllowed(
+  lead: { stage: string },
   toStage: string,
   reason?: string
-): Promise<void> {
+): void {
   const fromStage = lead.stage
 
   if (!isValidTransition(fromStage, toStage)) {
