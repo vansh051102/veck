@@ -16,7 +16,7 @@ import { NewLeadForm } from '@/components/new-lead-form'
 import { useCurrentUser } from '@/lib/use-current-user'
 import { PermissionGate } from '@/components/permission-gate'
 import { LEAD_PRIORITIES } from '@/lib/validation'
-import { visibleStagesForRole } from '@/lib/lead-stages'
+import { leadTabsForRole } from '@/lib/lead-stages'
 
 const DAY_FILTERS = [
   { label: 'All time', value: '' },
@@ -32,6 +32,7 @@ interface LeadStats {
   wonThisMonth: number
   slaBreached: number
   byStage: Record<string, number>
+  contactOutcome?: { connected: number; notReceived: number }
 }
 
 const filterControlClass =
@@ -42,7 +43,7 @@ export default function LeadsPage() {
   const { toast } = useToast()
   const me = useCurrentUser()
 
-  const stageTabs = ['All', ...(me ? visibleStagesForRole(me.role) : visibleStagesForRole('admin'))]
+  const leadTabs = leadTabsForRole(me?.role ?? 'admin')
 
   const [initialized, setInitialized] = useState(false)
   const [view, setView] = useState<'list' | 'kanban'>('list')
@@ -55,6 +56,7 @@ export default function LeadsPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [stage, setStage] = useState('') // '' = All tab
+  const [contactOutcome, setContactOutcome] = useState('') // '' | connected | not_received
   const [priority, setPriority] = useState('')
   const [days, setDays] = useState('')
   const [fromDate, setFromDate] = useState('')
@@ -77,6 +79,7 @@ export default function LeadsPage() {
     const params = new URLSearchParams(window.location.search)
     const p = params.get('page')
     if (params.get('stage')) setStage(params.get('stage')!)
+    if (params.get('contactOutcome')) setContactOutcome(params.get('contactOutcome')!)
     if (params.get('priority')) setPriority(params.get('priority')!)
     if (params.get('days')) setDays(params.get('days')!)
     if (params.get('from')) setFromDate(params.get('from')!)
@@ -94,6 +97,7 @@ export default function LeadsPage() {
     if (!initialized) return
     const params = new URLSearchParams()
     if (stage) params.set('stage', stage)
+    if (contactOutcome) params.set('contactOutcome', contactOutcome)
     if (priority) params.set('priority', priority)
     if (days) params.set('days', days)
     if (fromDate) params.set('from', fromDate)
@@ -106,7 +110,7 @@ export default function LeadsPage() {
     const qs = params.toString()
     router.replace(`/leads${qs ? `?${qs}` : ''}`, { scroll: false })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, priority, days, fromDate, toDate, search, page, sortBy, sortDir, view, initialized])
+  }, [stage, contactOutcome, priority, days, fromDate, toDate, search, page, sortBy, sortDir, view, initialized])
 
   useEffect(() => {
     api
@@ -125,6 +129,7 @@ export default function LeadsPage() {
   function buildFilterParams(): URLSearchParams {
     const params = new URLSearchParams()
     if (stage) params.set('stage', stage)
+    if (contactOutcome) params.set('contactOutcome', contactOutcome)
     if (priority) params.set('priority', priority)
     if (days) params.set('days', days)
     if (fromDate) params.set('from', fromDate)
@@ -165,7 +170,7 @@ export default function LeadsPage() {
       clearTimeout(debounce)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, stage, priority, days, fromDate, toDate, search, sortBy, sortDir, view, refreshKey])
+  }, [page, stage, contactOutcome, priority, days, fromDate, toDate, search, sortBy, sortDir, view, refreshKey])
 
   function handleSort(column: SortBy) {
     if (sortBy === column) {
@@ -305,19 +310,26 @@ export default function LeadsPage() {
       {/* Stage tabs */}
       <div className="overflow-x-auto">
         <div className="flex min-w-max gap-1 border-b border-border" role="tablist" aria-label="Lead stages">
-          {stageTabs.map((tab) => {
-            const value = tab === 'All' ? '' : tab
-            const active = stage === value
-            const count =
-              tab === 'All' ? stats?.total : stats?.byStage?.[tab] ?? 0
+          {leadTabs.map((tab) => {
+            const tabStage = tab.stage ?? ''
+            const tabOutcome = tab.contactOutcome ?? ''
+            const active = stage === tabStage && contactOutcome === tabOutcome
+            const count = !tab.stage
+              ? stats?.total
+              : tab.contactOutcome === 'connected'
+              ? stats?.contactOutcome?.connected ?? 0
+              : tab.contactOutcome === 'not_received'
+              ? stats?.contactOutcome?.notReceived ?? 0
+              : stats?.byStage?.[tab.stage] ?? 0
             return (
               <button
-                key={tab}
+                key={tab.label}
                 role="tab"
                 aria-selected={active}
                 onClick={() => {
                   setPage(1)
-                  setStage(value)
+                  setStage(tabStage)
+                  setContactOutcome(tabOutcome)
                 }}
                 className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
                   active
@@ -325,7 +337,7 @@ export default function LeadsPage() {
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {tab}
+                {tab.label}
                 {count !== undefined && (
                   <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs">{count}</span>
                 )}

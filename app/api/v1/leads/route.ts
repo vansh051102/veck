@@ -86,6 +86,7 @@ export const GET = withErrorHandler(async (req) => {
   const stage = url.searchParams.get('stage')
   const priority = url.searchParams.get('priority')
   const assignedToId = url.searchParams.get('assignedToId')
+  const contactOutcome = url.searchParams.get('contactOutcome') // connected | not_received
   const slaBreached = url.searchParams.get('slaBreached')
   const search = url.searchParams.get('search')
   const days = url.searchParams.get('days') // quick time-range filter: 7 / 30 / 90
@@ -111,6 +112,9 @@ export const GET = withErrorHandler(async (req) => {
   if (days && (!/^\d+$/.test(days) || Number(days) <= 0 || Number(days) > 365)) {
     throw new ValidationError(`Invalid days filter: ${days}`)
   }
+  if (contactOutcome && !['connected', 'not_received'].includes(contactOutcome)) {
+    throw new ValidationError(`Invalid contactOutcome filter: ${contactOutcome}`)
+  }
 
   const ownershipFilter = buildOwnershipFilter(userId, role || 'admin', department, 'leads')
 
@@ -120,6 +124,9 @@ export const GET = withErrorHandler(async (req) => {
     ...(stage && { stage }),
     ...(priority && { priority }),
     ...(assignedToId && { assignedToId }),
+    // "not_received" also covers leads with no call logged yet (null outcome)
+    ...(contactOutcome === 'connected' && { contactOutcome: 'connected' }),
+    ...(contactOutcome === 'not_received' && { NOT: { contactOutcome: 'connected' } }),
     ...(slaBreached === 'true' && { slaBreached: true }),
     ...((days || from || to) && {
       createdAt: {
@@ -145,6 +152,8 @@ export const GET = withErrorHandler(async (req) => {
       include: {
         contact: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         assignedTo: { select: { id: true, fullName: true, email: true } },
+        // Lead origin: who sourced/created it (marketing attribution)
+        createdBy: { select: { id: true, fullName: true } },
       },
     }),
     prisma.lead.count({ where }),

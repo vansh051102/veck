@@ -54,9 +54,41 @@ export const ALL_STAGES = [
 
 // Returns the stage tab labels a given role should see in the leads list nav.
 // Purchase staff only handle the Qualified → Quote Sent part of the funnel.
+// Marketing works the top of the funnel and stops at Qualified (handover point).
 export function visibleStagesForRole(role: string): string[] {
   if (role === 'purchase') {
     return ['Qualified', 'Quote Sent']
   }
+  if (role.startsWith('marketing')) {
+    return ['New Lead', 'Contacted', 'Qualified', 'Disqualified']
+  }
   return [...ALL_STAGES]
+}
+
+// ============================================================================
+// LEAD LIST TABS (role-aware)
+// ============================================================================
+// A tab is a saved filter: a stage plus (optionally) a contact outcome.
+// Marketing splits "Contacted" into "Connected" (call picked up) and
+// "Not Received" (no answer yet) — driven by Lead.contactOutcome, which is
+// set automatically from logged call outcomes.
+
+export interface LeadTab {
+  label: string
+  stage?: string // undefined = All
+  contactOutcome?: 'connected' | 'not_received'
+}
+
+export function leadTabsForRole(role: string): LeadTab[] {
+  if (role.startsWith('marketing')) {
+    return [
+      { label: 'All' },
+      { label: 'New Lead', stage: 'New Lead' },
+      { label: 'Connected', stage: 'Contacted', contactOutcome: 'connected' },
+      { label: 'Not Received', stage: 'Contacted', contactOutcome: 'not_received' },
+      { label: 'Qualified', stage: 'Qualified' },
+      { label: 'Disqualified', stage: 'Disqualified' },
+    ]
+  }
+  return [{ label: 'All' }, ...visibleStagesForRole(role).map((s) => ({ label: s, stage: s }))]
 }

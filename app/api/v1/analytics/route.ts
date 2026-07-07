@@ -63,9 +63,11 @@ export const GET = withErrorHandler(async (req: Request) => {
     }),
   ])
 
-  // Per-salesperson stats
+  // Per-salesperson stats. Team-wide numbers are admin-only: everyone else
+  // sees only their own row, so reps can't browse colleagues' performance.
+  const statsUsers = role === 'admin' ? orgUsers : orgUsers.filter((u) => u.id === userId)
   const salespersonStats = await Promise.all(
-    orgUsers.map(async (user) => {
+    statsUsers.map(async (user) => {
       const [assigned, won, activities] = await Promise.all([
         prisma.lead.count({ where: { orgId, assignedToId: user.id } }),
         prisma.lead.count({ where: { orgId, assignedToId: user.id, stage: 'Closed Won' } }),
@@ -102,6 +104,7 @@ export const GET = withErrorHandler(async (req: Request) => {
   }
 
   return successResponse({
+    scope: role === 'admin' ? 'team' : 'own',
     kpis: {
       totalLeads,
       openLeads,

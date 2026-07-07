@@ -63,7 +63,7 @@ export const GET = withErrorHandler(async (req: Request) => {
   monthStart.setHours(0, 0, 0, 0)
   const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
-  const [total, byStage, slaBreached, open, hot, wonThisMonth] = await Promise.all([
+  const [total, byStage, slaBreached, open, hot, wonThisMonth, connected] = await Promise.all([
     prisma.lead.count({ where: leadsWhere }),
     prisma.lead.groupBy({ by: ['stage'], where: leadsWhere, _count: { _all: true } }),
     prisma.lead.count({ where: { ...leadsWhere, slaBreached: true, status: 'open' } }),
@@ -71,6 +71,9 @@ export const GET = withErrorHandler(async (req: Request) => {
     prisma.lead.count({ where: { ...leadsWhere, status: 'open', priority: { in: ['High', 'Urgent'] } } }),
     prisma.lead.count({
       where: { ...leadsWhere, stage: 'Closed Won', stageChangedAt: { gte: monthStart } },
+    }),
+    prisma.lead.count({
+      where: { ...leadsWhere, stage: 'Contacted', contactOutcome: 'connected' },
     }),
   ])
 
@@ -83,6 +86,11 @@ export const GET = withErrorHandler(async (req: Request) => {
     wonThisMonth,
     slaBreached,
     byStage: byStageMap,
+    // Connected vs Not Received split within Contacted (marketing tabs)
+    contactOutcome: {
+      connected,
+      notReceived: (byStageMap['Contacted'] ?? 0) - connected,
+    },
   }
 
   if (role === 'marketing_manager' || role === 'marketing_executive') {

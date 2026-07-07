@@ -22,6 +22,9 @@ export interface LeadRow {
   contact: { firstName: string; lastName: string; email: string } | null
   assignedTo: { id?: string; fullName: string } | null
   assignedToId?: string | null
+  // Lead origin: who sourced/created it (marketing attribution)
+  createdBy?: { id: string; fullName: string } | null
+  source?: string | null
 }
 
 export interface OrgUser {
@@ -225,6 +228,7 @@ export function LeadsTable({
               <SortHeader column="stage">Stage</SortHeader>
               <SortHeader column="priority">Priority</SortHeader>
               <th className="whitespace-nowrap px-4 py-2 font-medium">Assigned To</th>
+              <th className="whitespace-nowrap px-4 py-2 font-medium">Lead By</th>
               <th className="whitespace-nowrap px-4 py-2 font-medium">SLA</th>
               <SortHeader column="lastActivityAt">Last Activity</SortHeader>
               <SortHeader column="createdAt">Created</SortHeader>
@@ -233,7 +237,7 @@ export function LeadsTable({
           <tbody>
             {topPad > 0 && (
               <tr aria-hidden="true">
-                <td colSpan={9} style={{ height: topPad, padding: 0 }} />
+                <td colSpan={10} style={{ height: topPad, padding: 0 }} />
               </tr>
             )}
             {visible.map((lead) => {
@@ -312,6 +316,12 @@ export function LeadsTable({
                       ))}
                     </select>
                   </td>
+                  <td
+                    className="whitespace-nowrap px-4 py-2 text-muted-foreground"
+                    title={lead.source ? `Source: ${lead.source}` : undefined}
+                  >
+                    {lead.createdBy?.fullName || '—'}
+                  </td>
                   <td className="whitespace-nowrap px-4 py-2">
                     {lead.slaBreached ? (
                       <Badge variant="destructive">Breached</Badge>
@@ -330,7 +340,7 @@ export function LeadsTable({
             })}
             {bottomPad > 0 && (
               <tr aria-hidden="true">
-                <td colSpan={9} style={{ height: bottomPad, padding: 0 }} />
+                <td colSpan={10} style={{ height: bottomPad, padding: 0 }} />
               </tr>
             )}
           </tbody>

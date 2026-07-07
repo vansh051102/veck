@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BarChart2, LayoutDashboard, Users, Settings } from 'lucide-react'
+import { BarChart2, LayoutDashboard, Trophy, Users, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/use-current-user'
 import { dashboardRouteForRole } from '@/lib/dashboard-routes'
@@ -27,6 +27,9 @@ export function Sidebar() {
     },
     { href: '/leads', label: 'Leads', icon: Users, permissions: ['leads:read'] },
     { href: '/analytics', label: 'Analytics', icon: BarChart2, permissions: ['analytics:read'] },
+    // Everyone can see their own performance; the API only returns other
+    // people's rows to admins.
+    { href: '/performance', label: 'Performance', icon: Trophy, permissions: [] },
     { href: '/settings', label: 'Settings', icon: Settings, permissions: ['settings:edit'] },
   ]
 

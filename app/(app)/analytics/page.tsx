@@ -34,6 +34,7 @@ interface ActivityDay {
 }
 
 interface AnalyticsData {
+  scope: 'team' | 'own'
   kpis: Kpis
   stageDistribution: Record<string, number>
   salespersonStats: SalespersonStat[]
@@ -187,7 +188,9 @@ export default function AnalyticsPage() {
 
       {/* Per-salesperson table */}
       <Card id="team-performance">
-        <CardHeader><CardTitle>Team Performance</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>{data.scope === 'team' ? 'Team Performance' : 'My Performance'}</CardTitle>
+        </CardHeader>
         <CardContent>
           {salespersonStats.length === 0 ? (
             <p className="text-sm text-muted-foreground">No team data yet.</p>

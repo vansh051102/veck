@@ -3,6 +3,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Include engines for both your Mac (native) and the Linux tooling
+  // environment, so `prisma generate` from either side never strips the
+  // other platform's engine out of node_modules.
+  binaryTargets = ["native", "darwin-arm64", "darwin", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -254,6 +258,10 @@ model Lead {
   stage             String    @default("New Lead") // New Lead, Contacted, Qualified, Quote Sent, Closed Won, Deal Lost, Disqualified
   stageChangedAt    DateTime  @default(now())
   stageChangedBy    String?
+  // Outcome of the latest completed call: "connected" (customer picked up)
+  // or "not_received" (no answer/busy). Drives the marketing team's
+  // Connected / Not Received tabs within the Contacted stage.
+  contactOutcome    String?
 
   // Classification
   priority          String    @default("Medium") // Low, Medium, High, Urgent

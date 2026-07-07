@@ -58,9 +58,26 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
       },
     })
 
+    // Completed calls update the lead's contact outcome, which drives the
+    // marketing Connected / Not Received tabs.
+    const callOutcome =
+      input.type === 'call' && input.status === 'completed'
+        ? (input.metadata as Record<string, unknown> | undefined)?.outcome
+        : undefined
+    const contactOutcome =
+      callOutcome === undefined
+        ? undefined
+        : callOutcome === 'connected'
+        ? 'connected'
+        : 'not_received'
+
     await tx.lead.update({
       where: { id: lead.id },
-      data: { lastActivityAt: now, firstResponseAt: lead.firstResponseAt ?? now },
+      data: {
+        lastActivityAt: now,
+        firstResponseAt: lead.firstResponseAt ?? now,
+        ...(contactOutcome && { contactOutcome }),
+      },
     })
 
     const timeline = await tx.timeline.upsert({

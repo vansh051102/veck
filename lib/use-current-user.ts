@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { api } from './api-client'
+import { supabaseBrowser } from './supabase-browser'
 
 export interface CurrentUser {
   id: string
@@ -52,10 +53,25 @@ export function invalidateCurrentUser(): void {
   listeners.forEach((refetch) => refetch())
 }
 
+// The cache must not survive a session change: signing out as one user and
+// in as another (SPA navigation, no full reload) would otherwise keep
+// serving the previous user's identity/permissions to the whole UI.
+let authSubscribed = false
+function subscribeToAuthChanges() {
+  if (authSubscribed || typeof window === 'undefined') return
+  authSubscribed = true
+  supabaseBrowser.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+      invalidateCurrentUser()
+    }
+  })
+}
+
 export function useCurrentUser(): CurrentUser | null {
   const [user, setUser] = useState<CurrentUser | null>(cached)
 
   useEffect(() => {
+    subscribeToAuthChanges()
     let cancelled = false
     function load() {
       fetchCurrentUser().then((u) => {

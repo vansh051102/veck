@@ -78,6 +78,9 @@ export const UpdateLeadSchema = CreateLeadSchema.partial()
 export const UpdateLeadStageSchema = z.object({
   stage: z.enum(LEAD_STAGES),
   reason: z.string().optional(),
+  // Optional handover: assign the lead to a specific user as part of the
+  // transition (used by marketing when qualifying a lead to a salesperson).
+  assignedToId: z.string().uuid('Invalid user ID').optional(),
 })
 
 export const AssignLeadSchema = z.object({

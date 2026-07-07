@@ -39,11 +39,22 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   if (!parsed.success) {
     throw new ValidationError('Invalid stage change request', parsed.error.flatten())
   }
-  const { stage: toStage, reason } = parsed.data
+  const { stage: toStage, reason, assignedToId } = parsed.data
   const fromStage = lead.stage
 
   // Validates legality of transition + gating rules (activities, checklists, reason)
   await assertTransitionAllowed(lead, toStage, reason)
+
+  // Optional handover: assign as part of the transition (marketing → sales
+  // at Qualified). Assignee must be an active user in the same org.
+  let assignee: { id: string; fullName: string } | null = null
+  if (assignedToId) {
+    assignee = await prisma.user.findFirst({
+      where: { id: assignedToId, orgId, status: 'active' },
+      select: { id: true, fullName: true },
+    })
+    if (!assignee) throw new ValidationError('Assignee not found or inactive')
+  }
 
   const now = new Date()
   const isLossPath = toStage === 'Deal Lost' || toStage === 'Disqualified'
@@ -64,6 +75,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
           dealLostDate: now,
         }),
         ...(toStage === 'Closed Won' && { status: 'closed_won' }),
+        ...(assignee && { assignedToId: assignee.id, assignedAt: now }),
       },
     })
 
@@ -85,9 +97,11 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
       data: {
         timelineId: timeline.id,
         type: 'stage_changed',
-        title: `Stage changed: ${fromStage} → ${toStage}`,
+        title: assignee
+          ? `Stage changed: ${fromStage} → ${toStage} · handed over to ${assignee.fullName}`
+          : `Stage changed: ${fromStage} → ${toStage}`,
         description: reason,
-        metadata: { oldStage: fromStage, newStage: toStage, reason },
+        metadata: { oldStage: fromStage, newStage: toStage, reason, assignedToId: assignee?.id },
         createdBy: userId,
       },
     })
