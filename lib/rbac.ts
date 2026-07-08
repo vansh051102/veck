@@ -1,5 +1,4 @@
 import { prisma } from './db'
-import { ForbiddenError } from './api-response'
 import { createChildLogger } from './logger'
 
 const log = createChildLogger('rbac')
@@ -33,19 +32,5 @@ export async function getUserPermissions(userId: string): Promise<string[]> {
   } catch (error) {
     log.error({ err: error, userId }, 'getUserPermissions failed')
     return []
-  }
-}
-
-/**
- * Require a specific permission — throws ForbiddenError if missing.
- */
-export async function requirePermission(
-  userId: string,
-  permission: string
-): Promise<void> {
-  const permissions = await getUserPermissions(userId)
-  if (permissions.includes('*')) return
-  if (!permissions.includes(permission)) {
-    throw new ForbiddenError(`Missing required permission: ${permission}`)
   }
 }

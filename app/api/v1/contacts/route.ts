@@ -2,13 +2,16 @@ import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { CreateContactSchema } from '@/lib/validation'
 import { PERMISSIONS } from '@/lib/rbac'
+import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import {
   successResponse,
   paginatedResponse,
   withErrorHandler,
   ValidationError,
+  ConflictError,
   getPaginationParams,
 } from '@/lib/api-response'
+import { Prisma } from '@prisma/client'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
 
@@ -25,21 +28,30 @@ export const POST = withErrorHandler(async (req) => {
   }
   const input = parsed.data
 
-  const contact = await prisma.contact.create({
-    data: {
-      orgId,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email,
-      phone: input.phone,
-      alternatePhone: input.alternatePhone,
-      designation: input.designation,
-      source: input.source,
-      sourceDetails: input.sourceDetails,
-      tags: input.tags,
-      createdById: userId,
-    },
-  })
+  let contact
+  try {
+    contact = await prisma.contact.create({
+      data: {
+        orgId,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: normalizeEmail(input.email),
+        phone: normalizePhone(input.phone),
+        alternatePhone: input.alternatePhone,
+        designation: input.designation,
+        source: input.source,
+        sourceDetails: input.sourceDetails,
+        tags: input.tags,
+        createdById: userId,
+      },
+    })
+  } catch (err) {
+    // @@unique([orgId, email]) / @@unique([orgId, phone]) — surface a clean 409
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new ConflictError('A contact with this email or phone already exists')
+    }
+    throw err
+  }
 
   await logAudit(orgId, userId, 'CREATE', 'Contact', contact.id, `${contact.firstName} ${contact.lastName}`)
 

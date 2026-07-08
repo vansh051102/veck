@@ -120,12 +120,16 @@ export function rateLimitResponse(retryAfter: number): NextResponse {
         message: `Rate limit exceeded. Try again in ${retryAfter} seconds.`,
         retryAfter,
       },
+      // Match the standard error envelope produced by errorResponse().
+      meta: {
+        statusCode: 429,
+        timestamp: new Date().toISOString(),
+      },
     },
     {
       status: 429,
       headers: {
         'Retry-After': String(retryAfter),
-        'X-RateLimit-Limit': '60',
         'X-RateLimit-Remaining': '0',
       },
     }

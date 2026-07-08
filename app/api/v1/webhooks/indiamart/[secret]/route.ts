@@ -4,6 +4,7 @@ import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { IndiaMartWebhookSchema, type IndiaMartLeadResponse } from '@/lib/validation'
 import { webhookLimiter, rateLimitResponse } from '@/lib/rate-limit'
 import { secureEqual } from '@/lib/secure-compare'
+import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 
 interface Params {
   params: { secret: string }
@@ -26,14 +27,16 @@ function resolveRequiredEnv(key: string): string {
 }
 
 async function findOrCreateContact(orgId: string, createdById: string, lead: IndiaMartLeadResponse) {
-  const email = lead.SENDER_EMAIL
-  const phone = lead.SENDER_MOBILE || lead.SENDER_PHONE || ''
+  const email = normalizeEmail(lead.SENDER_EMAIL)
+  const phone = normalizePhone(lead.SENDER_MOBILE || lead.SENDER_PHONE || '')
   const [firstName, ...rest] = (lead.SENDER_NAME || 'IndiaMART Buyer').trim().split(/\s+/)
   const lastName = rest.join(' ') || '-'
 
   const existing = email
     ? await prisma.contact.findFirst({ where: { orgId, email } })
-    : await prisma.contact.findFirst({ where: { orgId, phone } })
+    : phone
+    ? await prisma.contact.findFirst({ where: { orgId, phone } })
+    : null
 
   if (existing) return existing
 
@@ -103,13 +106,8 @@ export async function POST(req: Request, { params }: Params) {
   const lead = parsed.data.RESPONSE
 
   try {
-    // Dedup: IndiaMART's UNIQUE_QUERY_ID is the idempotency key
-    const existingLead = await prisma.lead.findUnique({ where: { externalId: lead.UNIQUE_QUERY_ID } })
-    if (existingLead) {
-      return NextResponse.json({ success: true, status: 'duplicate_skipped', leadId: existingLead.id })
-    }
-
-    // Resolve org and system user — required env vars, fail fast
+    // Resolve org and system user — required env vars, fail fast. Needed before
+    // the dedup lookup because externalId is unique per-org (@@unique([orgId, externalId])).
     const orgId = resolveRequiredEnv('INDIAMART_ORG_ID')
     const systemUserId = resolveRequiredEnv('INDIAMART_SYSTEM_USER_ID')
 
@@ -126,6 +124,15 @@ export async function POST(req: Request, { params }: Params) {
     if (!user) {
       console.error(`IndiaMART webhook: configured SYSTEM_USER_ID ${systemUserId} not found in org ${orgId}`)
       return NextResponse.json({ error: 'System user not found' }, { status: 500 })
+    }
+
+    // Dedup: IndiaMART's UNIQUE_QUERY_ID is the idempotency key, scoped to the org.
+    const existingLead = await prisma.lead.findFirst({
+      where: { orgId, externalId: lead.UNIQUE_QUERY_ID },
+      select: { id: true },
+    })
+    if (existingLead) {
+      return NextResponse.json({ success: true, status: 'duplicate_skipped', leadId: existingLead.id })
     }
 
     const contact = await findOrCreateContact(orgId, systemUserId, lead)

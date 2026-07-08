@@ -2,6 +2,7 @@ import { prisma } from './db'
 import { calculateSlaDeadline } from './workflow'
 import { createSopChecklistsForStage } from './sop-checklists'
 import { pickAssignee } from './auto-assign'
+import { TERMINAL_STAGES } from './lead-stages'
 import type { Prisma, Lead } from '@prisma/client'
 
 export interface CreateLeadInput {
@@ -51,7 +52,7 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
       where: {
         orgId: input.orgId,
         contactId: input.contactId,
-        stage: { notIn: ['Closed Won', 'Deal Lost', 'Disqualified'] },
+        stage: { notIn: [...TERMINAL_STAGES] },
       },
       select: {
         id: true,
