@@ -1,8 +1,15 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Phone,
+  MessageSquare,
+  BellRing,
+  FileText,
+} from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { otherStages } from '@/lib/lead-stages'
@@ -10,6 +17,9 @@ import { LEAD_PRIORITIES } from '@/lib/validation'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
 import { formatDate } from '@/lib/utils'
+import { LeadDetailDrawer } from '@/components/lead-detail-drawer'
+import { LeadActivityPopover, type PopoverAnchor } from '@/components/lead-activity-popover'
+import type { SubTab } from '@/components/lead-detail-panel'
 
 export interface LeadRow {
   id: string
@@ -19,13 +29,16 @@ export interface LeadRow {
   slaBreached: boolean
   createdAt: string
   lastActivityAt: string
-  contact: { firstName: string; lastName: string; email: string } | null
+  contact: { firstName: string; lastName: string; email: string; phone?: string | null } | null
   assignedTo: { id?: string; fullName: string } | null
   assignedToId?: string | null
   // Lead origin: who sourced/created it (marketing attribution)
   createdBy?: { id: string; fullName: string } | null
   source?: string | null
 }
+
+// How a row quick-action opens the detail drawer (which view + sub-tab).
+type DrawerTarget = { id: string; view?: 'lead' | 'quotation'; tab?: SubTab }
 
 export interface OrgUser {
   id: string
@@ -64,6 +77,10 @@ export const PRIORITY_VARIANT: Record<string, 'default' | 'warning' | 'destructi
 const cellSelectClass =
   'h-7 max-w-[140px] rounded-md border border-border bg-background px-1 text-xs outline-none focus:ring-2 focus:ring-primary'
 
+// Small square icon button used for the per-row quick actions.
+const iconBtnClass =
+  'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+
 // Simple windowed rendering: with large page sizes only the rows near the
 // viewport are mounted; spacer rows keep the scrollbar geometry correct.
 const ROW_HEIGHT = 41
@@ -94,9 +111,17 @@ export function LeadsTable({
   sortDir,
   onSort,
 }: LeadsTableProps) {
-  const router = useRouter()
   const { toast } = useToast()
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Which lead's slide-over detail drawer is open, and which view/tab to open
+  // it on (null = closed).
+  const [drawer, setDrawer] = useState<DrawerTarget | null>(null)
+  // Which lead's row is currently hovered (for the recent-activity popover)
+  // and the cursor point it's anchored to. A single popover instance is
+  // rendered for the whole table rather than one per row.
+  const [hoveredLeadId, setHoveredLeadId] = useState<string | null>(null)
+  const [popoverAnchor, setPopoverAnchor] = useState<PopoverAnchor | null>(null)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -115,8 +140,25 @@ export function LeadsTable({
     bottomPad = (data.length - end) * ROW_HEIGHT
   }
 
-  function openLead(id: string) {
-    router.push(`/leads/${id}`)
+  function openLead(id: string, opts?: { view?: 'lead' | 'quotation'; tab?: SubTab }) {
+    // Opening the drawer should dismiss any lingering hover popover.
+    handleRowLeave()
+    setDrawer({ id, ...opts })
+  }
+
+  // Debounced (350ms) row hover: anchor the popover near the cursor so it
+  // stays on-screen (the component clamps/flips it against the viewport).
+  function handleRowEnter(id: string, x: number, y: number) {
+    hoverTimer.current = setTimeout(() => {
+      setHoveredLeadId(id)
+      setPopoverAnchor({ x, y })
+    }, 350)
+  }
+
+  function handleRowLeave() {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    setHoveredLeadId(null)
+    setPopoverAnchor(null)
   }
 
   async function inlineUpdate(lead: LeadRow, fn: () => Promise<unknown>, successMsg: string) {
@@ -207,7 +249,12 @@ export function LeadsTable({
       {/* Desktop table */}
       <div
         ref={scrollRef}
-        onScroll={virtualize ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}
+        onScroll={(e) => {
+          if (virtualize) setScrollTop(e.currentTarget.scrollTop)
+          // A stale popover shouldn't float in place while the table scrolls
+          // out from under its anchor rect.
+          handleRowLeave()
+        }}
         style={virtualize ? { maxHeight: CONTAINER_HEIGHT, overflowY: 'auto' } : undefined}
         className="hidden overflow-x-auto rounded-lg border border-border md:block"
       >
@@ -232,19 +279,25 @@ export function LeadsTable({
               <th className="whitespace-nowrap px-4 py-2 font-medium">SLA</th>
               <SortHeader column="lastActivityAt">Last Activity</SortHeader>
               <SortHeader column="createdAt">Created</SortHeader>
+              <th className="whitespace-nowrap px-4 py-2 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {topPad > 0 && (
               <tr aria-hidden="true">
-                <td colSpan={10} style={{ height: topPad, padding: 0 }} />
+                <td colSpan={11} style={{ height: topPad, padding: 0 }} />
               </tr>
             )}
             {visible.map((lead) => {
               const stageOptions = inlineStageOptions(lead.stage)
               const busy = busyId === lead.id
               return (
-                <tr key={lead.id} className="border-t border-border hover:bg-muted">
+                <tr
+                  key={lead.id}
+                  className="border-t border-border hover:bg-muted"
+                  onMouseEnter={(e) => handleRowEnter(lead.id, e.clientX, e.clientY)}
+                  onMouseLeave={handleRowLeave}
+                >
                   <td className="px-4 py-2">
                     <input
                       type="checkbox"
@@ -263,7 +316,23 @@ export function LeadsTable({
                     </button>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    {lead.contact ? `${lead.contact.firstName} ${lead.contact.lastName}` : '—'}
+                    {lead.contact ? (
+                      <div className="flex flex-col leading-tight">
+                        <span className="font-medium">
+                          {lead.contact.firstName} {lead.contact.lastName}
+                        </span>
+                        {lead.contact.phone && (
+                          <span className="text-xs text-muted-foreground">{lead.contact.phone}</span>
+                        )}
+                        {lead.contact.email && (
+                          <span className="max-w-[200px] truncate text-xs text-muted-foreground">
+                            {lead.contact.email}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">
                     {stageOptions.length === 0 ? (
@@ -335,17 +404,69 @@ export function LeadsTable({
                   <td className="whitespace-nowrap px-4 py-2">
                     {formatDate(new Date(lead.createdAt))}
                   </td>
+                  <td className="whitespace-nowrap px-4 py-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openLead(lead.id, { view: 'quotation' })}
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        title="Create quote"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        Quote
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openLead(lead.id, { view: 'lead', tab: 'calls' })}
+                        className={iconBtnClass}
+                        aria-label={`Log a call for ${lead.companyName}`}
+                        title="Log a call"
+                      >
+                        <Phone className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openLead(lead.id, { view: 'lead', tab: 'messages' })}
+                        className={iconBtnClass}
+                        aria-label={`Log a message for ${lead.companyName}`}
+                        title="Log a message"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openLead(lead.id, { view: 'lead', tab: 'reminders' })}
+                        className={iconBtnClass}
+                        aria-label={`Add a reminder for ${lead.companyName}`}
+                        title="Add a reminder"
+                      >
+                        <BellRing className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               )
             })}
             {bottomPad > 0 && (
               <tr aria-hidden="true">
-                <td colSpan={10} style={{ height: bottomPad, padding: 0 }} />
+                <td colSpan={11} style={{ height: bottomPad, padding: 0 }} />
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {drawer && (
+        <LeadDetailDrawer
+          leadId={drawer.id}
+          initialView={drawer.view}
+          initialTab={drawer.tab}
+          onClose={() => setDrawer(null)}
+          onChanged={onChanged}
+        />
+      )}
+
+      <LeadActivityPopover leadId={hoveredLeadId} anchor={popoverAnchor} />
     </>
   )
 }

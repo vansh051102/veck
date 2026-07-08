@@ -39,6 +39,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
   return body
 }
 
+// Multipart upload: sends FormData with no explicit Content-Type so the browser
+// sets the multipart boundary itself. Used for lead document uploads.
+async function uploadRequest<T>(path: string, form: FormData): Promise<ApiEnvelope<T>> {
+  const {
+    data: { session },
+  } = await supabaseBrowser.auth.getSession()
+
+  const res = await fetch(`/api/v1${path}`, {
+    method: 'POST',
+    body: form,
+    headers: {
+      ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+    },
+  })
+
+  const body = (await res.json()) as ApiEnvelope<T>
+  if (!res.ok || !body.success) {
+    throw new ApiError(res.status, body.error?.message || 'Request failed', body.error?.details)
+  }
+  return body
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   post: <T>(path: string, data?: unknown) =>
@@ -46,4 +68,5 @@ export const api = {
   put: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: 'PUT', body: data ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  upload: <T>(path: string, form: FormData) => uploadRequest<T>(path, form),
 }

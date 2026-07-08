@@ -154,7 +154,22 @@ describe('assertTransitionAllowed', () => {
 
   it('allows moving to Disqualified with a valid SOP reason', () => {
     const lead = makeLead({ stage: 'Qualified' })
-    expect(() => assertTransitionAllowed(lead, 'Disqualified', 'Budget Issue')).not.toThrow()
+    expect(() =>
+      assertTransitionAllowed(lead, 'Disqualified', 'Customer Not Interested')
+    ).not.toThrow()
+  })
+
+  it('allows moving to Deal Lost with a valid SOP reason', () => {
+    const lead = makeLead({ stage: 'Quote Sent' })
+    expect(() => assertTransitionAllowed(lead, 'Deal Lost', 'Price Not Accepted')).not.toThrow()
+  })
+
+  it('rejects a Deal Lost reason on the Disqualified path (lists are distinct)', () => {
+    const lead = makeLead({ stage: 'Qualified' })
+    // "Budget Constraints" is a Deal Lost reason, not a Disqualified one.
+    expect(() => assertTransitionAllowed(lead, 'Disqualified', 'Budget Constraints')).toThrow(
+      ValidationError
+    )
   })
 
   it('rejects free-text loss reasons not in the SOP list', () => {

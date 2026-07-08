@@ -14,6 +14,17 @@ export interface DashboardStats {
   dealAgingBuckets?: { '0-7d': number; '8-30d': number; '30d+': number }
   // Purchase-only
   avgQualifiedToQuoteSentHours?: number | null
+  // Admin-only
+  recentQuoteSents?: {
+    id: string
+    companyName: string
+    quotationNumber: string | null
+    quotationValue: number | null
+    supplierMargin: number | null
+    productCategory: string | null
+    stageChangedAt: string | null
+    assignedTo: { fullName: string } | null
+  }[]
 }
 
 export interface LeadSummary {

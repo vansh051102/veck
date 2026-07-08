@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Download, LayoutGrid, List, Plus, Upload } from 'lucide-react'
+import { Download, LayoutGrid, List, Plus, Upload, SlidersHorizontal } from 'lucide-react'
 import { api, ApiError } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { LeadsTable, type LeadRow, type OrgUser, type SortBy, type SortDir } from '@/components/leads-table'
 import { LeadsKanban } from '@/components/leads-kanban'
 import { LeadsImportModal } from '@/components/leads-import-modal'
+import { AssignmentRulesModal } from '@/components/assignment-rules-modal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
@@ -49,6 +50,7 @@ export default function LeadsPage() {
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [showNewLead, setShowNewLead] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showRules, setShowRules] = useState(false)
   const [leads, setLeads] = useState<LeadRow[]>([])
   const [users, setUsers] = useState<OrgUser[]>([])
   const [stats, setStats] = useState<LeadStats | null>(null)
@@ -74,25 +76,48 @@ export default function LeadsPage() {
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
+  const STORAGE_KEY = 'leads-filters'
+
   // Read filter state from URL on first mount so back-navigation restores filters.
+  // If URL has no params, restore from sessionStorage (survives sidebar navigation).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const p = params.get('page')
-    if (params.get('stage')) setStage(params.get('stage')!)
-    if (params.get('contactOutcome')) setContactOutcome(params.get('contactOutcome')!)
-    if (params.get('priority')) setPriority(params.get('priority')!)
-    if (params.get('days')) setDays(params.get('days')!)
-    if (params.get('from')) setFromDate(params.get('from')!)
-    if (params.get('to')) setToDate(params.get('to')!)
-    if (params.get('search')) setSearch(params.get('search')!)
-    if (params.get('sortBy')) setSortBy(params.get('sortBy') as SortBy)
-    if (params.get('sortDir')) setSortDir(params.get('sortDir') as SortDir)
-    if (params.get('view')) setView(params.get('view') as 'list' | 'kanban')
-    if (p && /^\d+$/.test(p)) setPage(Number(p))
+    const hasUrlParams = [...params.keys()].length > 0
+
+    if (hasUrlParams) {
+      if (params.get('stage')) setStage(params.get('stage')!)
+      if (params.get('contactOutcome')) setContactOutcome(params.get('contactOutcome')!)
+      if (params.get('priority')) setPriority(params.get('priority')!)
+      if (params.get('days')) setDays(params.get('days')!)
+      if (params.get('from')) setFromDate(params.get('from')!)
+      if (params.get('to')) setToDate(params.get('to')!)
+      if (params.get('search')) setSearch(params.get('search')!)
+      if (params.get('sortBy')) setSortBy(params.get('sortBy') as SortBy)
+      if (params.get('sortDir')) setSortDir(params.get('sortDir') as SortDir)
+      if (params.get('view')) setView(params.get('view') as 'list' | 'kanban')
+      const p = params.get('page')
+      if (p && /^\d+$/.test(p)) setPage(Number(p))
+    } else {
+      try {
+        const cached = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}')
+        if (cached.stage) setStage(cached.stage)
+        if (cached.contactOutcome) setContactOutcome(cached.contactOutcome)
+        if (cached.priority) setPriority(cached.priority)
+        if (cached.days) setDays(cached.days)
+        if (cached.fromDate) setFromDate(cached.fromDate)
+        if (cached.toDate) setToDate(cached.toDate)
+        if (cached.search) setSearch(cached.search)
+        if (cached.sortBy) setSortBy(cached.sortBy)
+        if (cached.sortDir) setSortDir(cached.sortDir)
+        if (cached.view) setView(cached.view)
+        if (cached.page) setPage(cached.page)
+      } catch {}
+    }
     setInitialized(true)
   }, [])
 
   // Sync filters back to URL whenever they change (only after initialization).
+  // Also persist to sessionStorage so sidebar navigation restores filters.
   useEffect(() => {
     if (!initialized) return
     const params = new URLSearchParams()
@@ -109,6 +134,13 @@ export default function LeadsPage() {
     if (view !== 'list') params.set('view', view)
     const qs = params.toString()
     router.replace(`/leads${qs ? `?${qs}` : ''}`, { scroll: false })
+
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+        stage, contactOutcome, priority, days, fromDate, toDate,
+        search, page, sortBy, sortDir, view,
+      }))
+    } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, contactOutcome, priority, days, fromDate, toDate, search, page, sortBy, sortDir, view, initialized])
 
@@ -259,6 +291,12 @@ export default function LeadsPage() {
               Kanban
             </Button>
           </div>
+          <PermissionGate permission="settings:edit">
+            <Button variant="outline" size="sm" onClick={() => setShowRules(true)}>
+              <SlidersHorizontal className="h-4 w-4" />
+              Assignment Rules
+            </Button>
+          </PermissionGate>
           <PermissionGate permission="leads:import">
             <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
               <Upload className="h-4 w-4" />
@@ -306,6 +344,8 @@ export default function LeadsPage() {
       )}
 
       {showImport && <LeadsImportModal onClose={() => setShowImport(false)} onImported={refresh} />}
+
+      {showRules && <AssignmentRulesModal onClose={() => setShowRules(false)} />}
 
       {/* Stage tabs */}
       <div className="overflow-x-auto">

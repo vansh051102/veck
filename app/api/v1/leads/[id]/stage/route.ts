@@ -38,7 +38,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   if (!parsed.success) {
     throw new ValidationError('Invalid stage change request', parsed.error.flatten())
   }
-  const { stage: toStage, reason, reasonDetails, assignedToId } = parsed.data
+  const { stage: toStage, reason, reasonDetails, assignedToId, supplierMargin, quotationNumber, productCategory, quotationValue } = parsed.data
   const fromStage = lead.stage
 
   // Validates legality of transition + gating rules (activities, checklists, reason)
@@ -76,6 +76,12 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
         }),
         ...(toStage === 'Closed Won' && { status: 'closed_won' }),
         ...(assignee && { assignedToId: assignee.id, assignedAt: now }),
+        ...(toStage === 'Quote Sent' && {
+          supplierMargin,
+          quotationNumber,
+          productCategory,
+          quotationValue,
+        }),
       },
     })
 

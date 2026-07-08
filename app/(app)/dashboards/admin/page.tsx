@@ -8,6 +8,7 @@ import { visibleStagesForRole } from '@/lib/lead-stages'
 import { useDashboardData } from '@/components/dashboard/use-dashboard-data'
 import { useDashboardRoleGuard } from '@/components/dashboard/use-dashboard-role-guard'
 import { RecentLeadsCard } from '@/components/dashboard/recent-leads-card'
+import { QuotationChangesCard } from '@/components/dashboard/quotation-changes-card'
 import { ViewAsBanner } from '@/components/ViewAsBanner'
 
 export default function AdminDashboardPage() {
@@ -90,6 +91,11 @@ export default function AdminDashboardPage() {
       </Card>
 
       <RecentLeadsCard leads={recentLeads} />
+
+      {/* Quotation changes — only shown to admins when data exists */}
+      {stats?.recentQuoteSents && stats.recentQuoteSents.length > 0 && (
+        <QuotationChangesCard leads={stats.recentQuoteSents} />
+      )}
     </div>
   )
 }

@@ -68,6 +68,8 @@ export const CreateLeadSchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
   priority: z.enum(LEAD_PRIORITIES).default('Medium'),
   notes: z.string().optional(),
+  // Free-text customer requirement shown/edited in the "Requirements" tab.
+  requirement: z.string().optional(),
   source: z.string().optional(),
   sourceDetails: z.record(z.any()).optional(),
   tags: z.array(z.string()).default([]),
@@ -75,13 +77,37 @@ export const CreateLeadSchema = z.object({
 
 export const UpdateLeadSchema = CreateLeadSchema.partial()
 
-export const UpdateLeadStageSchema = z.object({
-  stage: z.enum(LEAD_STAGES),
-  reason: z.string().optional(),
-  // Optional handover: assign the lead to a specific user as part of the
-  // transition (used by marketing when qualifying a lead to a salesperson).
-  assignedToId: z.string().uuid('Invalid user ID').optional(),
-})
+export const UpdateLeadStageSchema = z
+  .object({
+    stage: z.enum(LEAD_STAGES),
+    reason: z.string().optional(),
+    reasonDetails: z.string().optional(),
+    assignedToId: z.string().uuid('Invalid user ID').optional(),
+    // Quote Sent details (required when stage = "Quote Sent")
+    supplierMargin: z.number().min(0).max(100).optional(),
+    quotationNumber: z.string().optional(),
+    productCategory: z.string().optional(),
+    quotationValue: z.number().positive().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.stage === 'Quote Sent') {
+        return (
+          data.supplierMargin !== undefined &&
+          data.quotationNumber !== undefined &&
+          data.quotationNumber.trim().length > 0 &&
+          data.productCategory !== undefined &&
+          data.productCategory.trim().length > 0 &&
+          data.quotationValue !== undefined
+        )
+      }
+      return true
+    },
+    {
+      message:
+        'Supplier margin, quotation number, product category, and quotation value are required when moving to Quote Sent',
+    }
+  )
 
 export const AssignLeadSchema = z.object({
   assignedToId: z.string().uuid('Invalid user ID'),
@@ -96,7 +122,15 @@ export type AssignLeadInput = z.infer<typeof AssignLeadSchema>
 // ACTIVITY VALIDATION (Phase 1)
 // ============================================================================
 
-export const ACTIVITY_TYPES = ['call', 'email', 'note', 'meeting', 'task'] as const
+export const ACTIVITY_TYPES = [
+  'call',
+  'email',
+  'note',
+  'meeting',
+  'task',
+  'message', // WhatsApp/SMS/email logged via "Log a Message"
+  'reminder', // scheduled follow-up logged via "Log a Reminder"
+] as const
 export const ACTIVITY_STATUSES = ['pending', 'completed', 'cancelled'] as const
 
 export const CreateActivitySchema = z.object({
@@ -234,6 +268,29 @@ export const IndiaMartWebhookSchema = z.object({
 })
 
 export type IndiaMartLeadResponse = z.infer<typeof IndiaMartLeadResponseSchema>
+
+// ============================================================================
+// ASSIGNMENT RULE VALIDATION
+// ============================================================================
+// Workspace-level auto-assignment rules (admin-only). A rule matches a newly
+// created lead by source + optional weekday + optional product category and
+// routes it to a specific user.
+
+export const CreateAssignmentRuleSchema = z.object({
+  source: z.string().min(1, 'Source is required'),
+  // 0=Sunday .. 6=Saturday; null = applies on any day.
+  weekday: z.number().int().min(0).max(6).nullable().default(null),
+  // null = applies to any product category.
+  productCategory: z.string().min(1).nullable().default(null),
+  assignedToId: z.string().uuid('Invalid user ID'),
+  isActive: z.boolean().default(true),
+  priority: z.number().int().nonnegative().default(0),
+})
+
+export const UpdateAssignmentRuleSchema = CreateAssignmentRuleSchema.partial()
+
+export type CreateAssignmentRuleInput = z.infer<typeof CreateAssignmentRuleSchema>
+export type UpdateAssignmentRuleInput = z.infer<typeof UpdateAssignmentRuleSchema>
 
 // ============================================================================
 // PAGINATION VALIDATION

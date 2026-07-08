@@ -77,12 +77,45 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     throw new ValidationError('Invalid lead data', parsed.error.flatten())
   }
 
+  // Track changed fields for timeline
+  const changedFields: Record<string, { from: unknown; to: unknown }> = {}
+  const updateData = parsed.data
+  for (const key of Object.keys(updateData)) {
+    const k = key as keyof typeof updateData
+    if (updateData[k] !== existing[k]) {
+      changedFields[k] = { from: existing[k], to: updateData[k] }
+    }
+  }
+
   const lead = await prisma.lead.update({
     where: { id: params.id },
-    data: parsed.data,
+    data: updateData,
   })
 
-  await logAudit(ctx.orgId, ctx.userId, 'UPDATE', 'Lead', lead.id, lead.companyName, parsed.data)
+  await logAudit(ctx.orgId, ctx.userId, 'UPDATE', 'Lead', lead.id, lead.companyName, updateData)
+
+  // Create timeline event if fields were changed
+  if (Object.keys(changedFields).length > 0) {
+    const timeline = await prisma.timeline.upsert({
+      where: { leadId: lead.id },
+      update: {},
+      create: { leadId: lead.id },
+    })
+
+    const changesSummary = Object.entries(changedFields)
+      .map(([k, v]) => `${k}: ${v.from} → ${v.to}`)
+      .join('; ')
+
+    await prisma.timelineEvent.create({
+      data: {
+        timelineId: timeline.id,
+        type: 'lead_updated',
+        title: `Updated ${Object.keys(changedFields).join(', ')}`,
+        description: changesSummary,
+        createdBy: ctx.userId,
+      },
+    })
+  }
 
   return successResponse(lead)
 })

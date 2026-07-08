@@ -129,7 +129,7 @@ export async function POST(req: Request, { params }: Params) {
 
     const contact = await findOrCreateContact(orgId, systemUserId, lead)
 
-    const created = await createLeadWithDefaults({
+    const result = await createLeadWithDefaults({
       orgId,
       contactId: contact.id,
       companyName: lead.SENDER_COMPANY || lead.SENDER_NAME || 'Unknown Company',
@@ -142,7 +142,31 @@ export async function POST(req: Request, { params }: Params) {
       createdById: systemUserId,
     })
 
-    return NextResponse.json({ success: true, status: 'created', leadId: created.id }, { status: 201 })
+    if (result.duplicate) {
+      // Auto-link: create a timeline event on the existing lead so the
+      // assignee knows this buyer re-submitted via IndiaMART.
+      const timeline = await prisma.timeline.upsert({
+        where: { leadId: result.existingLead.id },
+        create: { leadId: result.existingLead.id },
+        update: {},
+      })
+      await prisma.timelineEvent.create({
+        data: {
+          timelineId: timeline.id,
+          type: 're_submission',
+          title: `Re-submitted via IndiaMART — source: ${lead.SENDER_NAME || 'Buyer'}`,
+          description: `Buyer ${lead.SENDER_NAME} submitted again. Already assigned to ${result.existingLead.assignedTo?.fullName ?? 'someone'}.`,
+          metadata: { queryMessage: lead.QUERY_MESSAGE, productName: lead.QUERY_PRODUCT_NAME },
+          createdBy: systemUserId,
+        },
+      })
+      return NextResponse.json(
+        { success: true, status: 'duplicate_linked', leadId: result.existingLead.id },
+        { status: 200 }
+      )
+    }
+
+    return NextResponse.json({ success: true, status: 'created', leadId: result.lead.id }, { status: 201 })
   } catch (error) {
     console.error('IndiaMART webhook processing error:', error)
     return NextResponse.json({ error: 'Internal processing error' }, { status: 500 })

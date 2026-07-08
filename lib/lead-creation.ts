@@ -2,7 +2,7 @@ import { prisma } from './db'
 import { calculateSlaDeadline } from './workflow'
 import { createSopChecklistsForStage } from './sop-checklists'
 import { pickAssignee } from './auto-assign'
-import type { Prisma } from '@prisma/client'
+import type { Prisma, Lead } from '@prisma/client'
 
 export interface CreateLeadInput {
   orgId: string
@@ -19,20 +19,61 @@ export interface CreateLeadInput {
   assignedToId?: string
 }
 
+export type CreateLeadResult =
+  | { duplicate: false; lead: Lead }
+  | {
+      duplicate: true
+      existingLead: {
+        id: string
+        companyName: string
+        stage: string
+        assignedTo: { fullName: string } | null
+      }
+    }
+
 /**
  * Creates a lead plus its NEW_LEAD checklist and initial timeline event, in
  * a single transaction. Shared by the authenticated POST /api/v1/leads route
  * and external ingestion webhooks (e.g. IndiaMART) so both paths stay in
  * sync on what "a new lead" means, instead of duplicating this logic.
+ *
+ * Before creating, checks for an existing open lead with the same contactId.
+ * If found, returns { duplicate: true, existingLead } instead of creating.
  */
-export async function createLeadWithDefaults(input: CreateLeadInput) {
+export async function createLeadWithDefaults(input: CreateLeadInput): Promise<CreateLeadResult> {
   const now = new Date()
   const stage = 'New Lead'
 
   return prisma.$transaction(async (tx) => {
+    // Duplicate check: if this contact already has an open lead in the org,
+    // return the existing one instead of creating a second.
+    const existingLead = await tx.lead.findFirst({
+      where: {
+        orgId: input.orgId,
+        contactId: input.contactId,
+        stage: { notIn: ['Closed Won', 'Deal Lost', 'Disqualified'] },
+      },
+      select: {
+        id: true,
+        companyName: true,
+        stage: true,
+        assignedTo: { select: { fullName: true } },
+      },
+    })
+
+    if (existingLead) {
+      return { duplicate: true, existingLead }
+    }
+
     // Explicit assignee wins; otherwise fall back to auto-assignment
     // (round-robin by capacity) when enabled in Settings.
-    const assignedToId = input.assignedToId ?? (await pickAssignee(tx, input.orgId))
+    const assignedToId =
+      input.assignedToId ??
+      (await pickAssignee(tx, input.orgId, {
+        source: input.source,
+        sourceDetails: input.sourceDetails,
+        at: now,
+      }))
 
     const created = await tx.lead.create({
       data: {
@@ -72,6 +113,6 @@ export async function createLeadWithDefaults(input: CreateLeadInput) {
       },
     })
 
-    return created
+    return { duplicate: false, lead: created }
   })
 }

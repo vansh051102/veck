@@ -139,5 +139,29 @@ export const GET = withErrorHandler(async (req: Request) => {
     stats.avgQualifiedToQuoteSentHours = await computeAvgQualifiedToQuoteSentHours(orgId)
   }
 
+  // Admin: recent quotation changes (leads that moved to Quote Sent this week)
+  if (role === 'admin') {
+    const recentQuoteSents = await prisma.lead.findMany({
+      where: {
+        orgId,
+        stage: 'Quote Sent',
+        stageChangedAt: { gte: weekStart },
+      },
+      select: {
+        id: true,
+        companyName: true,
+        quotationNumber: true,
+        quotationValue: true,
+        supplierMargin: true,
+        productCategory: true,
+        stageChangedAt: true,
+        assignedTo: { select: { fullName: true } },
+      },
+      orderBy: { stageChangedAt: 'desc' },
+      take: 10,
+    })
+    stats.recentQuoteSents = recentQuoteSents
+  }
+
   return successResponse(stats)
 })

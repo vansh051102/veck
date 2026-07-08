@@ -3,8 +3,8 @@ import {
   ALL_STAGES,
   TERMINAL_STAGES,
   isTerminalStage,
-  isValidDealLostReason,
-  DEAL_LOST_REASONS,
+  isValidReason,
+  reasonsForStage,
 } from './lead-stages'
 
 export { TERMINAL_STAGES, isTerminalStage }
@@ -63,9 +63,9 @@ export function assertTransitionAllowed(
     if (!reason || reason.trim().length === 0) {
       throw new ValidationError(`A reason is required when moving a lead to "${toStage}"`)
     }
-    if (!isValidDealLostReason(reason)) {
+    if (!isValidReason(toStage, reason)) {
       throw new ValidationError(
-        `Invalid reason "${reason}". Valid reasons: ${DEAL_LOST_REASONS.join(', ')}`
+        `Invalid reason "${reason}". Valid reasons: ${reasonsForStage(toStage).join(', ')}`
       )
     }
   }

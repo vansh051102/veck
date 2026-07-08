@@ -57,10 +57,13 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
       input.type === 'call' && input.status === 'completed'
         ? (input.metadata as Record<string, unknown> | undefined)?.outcome
         : undefined
+    // Accepts both the legacy machine values ("connected"/"not_received") and
+    // the "Log a Call" outcome labels ("Connected", "No Answer", …). Only a
+    // picked-up call counts as connected.
     const contactOutcome =
       callOutcome === undefined
         ? undefined
-        : callOutcome === 'connected'
+        : callOutcome === 'connected' || callOutcome === 'Connected'
         ? 'connected'
         : 'not_received'
 

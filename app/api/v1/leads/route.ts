@@ -36,23 +36,7 @@ export const POST = withErrorHandler(async (req) => {
   })
   if (!contact) throw new NotFoundError('Contact')
 
-  // Block duplicate leads: if this contact already has an open (non-terminal)
-  // lead, surface the existing one instead of creating a second.
-  const existingLead = await prisma.lead.findFirst({
-    where: {
-      orgId: ctx.orgId,
-      contactId: input.contactId,
-      stage: { notIn: ['Closed Won', 'Deal Lost', 'Disqualified'] },
-    },
-    select: { id: true, companyName: true, stage: true },
-  })
-  if (existingLead) {
-    throw new ConflictError(
-      `An open lead for this contact already exists (${existingLead.companyName} — ${existingLead.stage}). Lead ID: ${existingLead.id}`
-    )
-  }
-
-  const lead = await createLeadWithDefaults({
+  const result = await createLeadWithDefaults({
     orgId: ctx.orgId,
     contactId: input.contactId,
     companyName: input.companyName,
@@ -64,9 +48,16 @@ export const POST = withErrorHandler(async (req) => {
     createdById: ctx.userId,
   })
 
-  await logAudit(ctx.orgId, ctx.userId, 'CREATE', 'Lead', lead.id, lead.companyName)
+  if (result.duplicate) {
+    throw new ConflictError(
+      `This lead is already assigned to ${result.existingLead.assignedTo?.fullName ?? 'someone'} ` +
+      `(${result.existingLead.stage}). Lead ID: ${result.existingLead.id}`
+    )
+  }
 
-  return successResponse(lead, { statusCode: 201 })
+  await logAudit(ctx.orgId, ctx.userId, 'CREATE', 'Lead', result.lead.id, result.lead.companyName)
+
+  return successResponse(result.lead, { statusCode: 201 })
 })
 
 // GET /api/v1/leads - List leads with pagination & filters

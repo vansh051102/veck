@@ -78,7 +78,7 @@ export const POST = withErrorHandler(async (req: Request) => {
         update: {}, // existing contact wins; import never overwrites
       })
 
-      await createLeadWithDefaults({
+      const result = await createLeadWithDefaults({
         orgId,
         contactId: contact.id,
         companyName: row.companyName,
@@ -88,7 +88,14 @@ export const POST = withErrorHandler(async (req: Request) => {
         assignedToId: row.assignedToEmail ? assigneeIdByEmail.get(row.assignedToEmail) : undefined,
         createdById: userId,
       })
-      created++
+      if (result.duplicate) {
+        errors.push({
+          row: index + 1,
+          message: `Already exists — assigned to ${result.existingLead.assignedTo?.fullName ?? 'someone'} (${result.existingLead.stage})`,
+        })
+      } else {
+        created++
+      }
     } catch (err) {
       errors.push({
         row: index + 1,
