@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useCurrentUser } from '@/lib/use-current-user'
 import { useDashboardData } from '@/components/dashboard/use-dashboard-data'
@@ -9,6 +10,10 @@ import { SalesPipelineSection } from '@/components/dashboard/sales-pipeline-sect
 import { ViewAsBanner } from '@/components/ViewAsBanner'
 
 export default function SalesDashboardPage() {
+  return <Suspense><SalesDashboardPageContent /></Suspense>
+}
+
+function SalesDashboardPageContent() {
   useDashboardRoleGuard()
   const me = useCurrentUser()
   const searchParams = useSearchParams()

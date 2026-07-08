@@ -37,6 +37,10 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
 
+  // Duplicate contact detection: runs when phone or email changes in new-contact mode
+  const [dupMatches, setDupMatches] = useState<ContactOption[]>([])
+  const [ignoreDup, setIgnoreDup] = useState(false)
+
   useEffect(() => {
     if (mode !== 'existing' || contactSearch.trim().length < 2) {
       setContactOptions([])
@@ -56,6 +60,26 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
       clearTimeout(debounce)
     }
   }, [mode, contactSearch])
+
+  useEffect(() => {
+    if (mode !== 'new') { setDupMatches([]); return }
+    const p = phone.trim()
+    const em = email.trim()
+    if (!p && !em) { setDupMatches([]); return }
+    let cancelled = false
+    const debounce = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams()
+        if (p) qs.set('phone', p)
+        if (em) qs.set('email', em)
+        const res = await api.get<ContactOption[]>(`/contacts?${qs.toString()}`)
+        if (!cancelled) setDupMatches(res.data ?? [])
+      } catch {
+        if (!cancelled) setDupMatches([])
+      }
+    }, 400)
+    return () => { cancelled = true; clearTimeout(debounce) }
+  }, [mode, phone, email])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -160,6 +184,7 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
           {selectedContactId && <p className="text-xs text-muted-foreground">Contact selected.</p>}
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="lead-first-name" className="text-sm font-medium">
@@ -212,6 +237,43 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
             {fieldErrors.phone && <p className="text-xs text-destructive">{fieldErrors.phone}</p>}
           </div>
         </div>
+
+        {!ignoreDup && dupMatches.length > 0 && (
+          <div className="rounded-md border border-amber-400/50 bg-amber-50 p-3 text-sm dark:bg-amber-950/30">
+            <p className="font-medium text-amber-800 dark:text-amber-300">
+              Possible duplicate{dupMatches.length > 1 ? 's' : ''} found
+            </p>
+            <ul className="mt-1 space-y-1">
+              {dupMatches.map((c) => (
+                <li key={c.id} className="flex items-center justify-between gap-2">
+                  <span className="text-amber-700 dark:text-amber-400">
+                    {c.firstName} {c.lastName} · {c.phone || c.email}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedContactId(c.id)
+                      setMode('existing')
+                      setContactSearch(`${c.firstName} ${c.lastName}`)
+                      setDupMatches([])
+                    }}
+                    className="whitespace-nowrap text-xs font-medium text-primary underline-offset-2 hover:underline"
+                  >
+                    Use this contact
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => setIgnoreDup(true)}
+              className="mt-2 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Ignore and create anyway
+            </button>
+          </div>
+        )}
+        </>
       )}
 
       <div className="flex flex-col gap-1.5">

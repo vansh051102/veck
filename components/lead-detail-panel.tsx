@@ -9,6 +9,7 @@ import { LEAD_PRIORITIES } from '@/lib/validation'
 import { formatDate, isSlaOverdue } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { LeadAssignControl } from '@/components/lead-assign-control'
 import { LeadQuotes } from '@/components/lead-quotes'
@@ -103,6 +104,16 @@ export function LeadDetailPanel({
   const [lossStage, setLossStage] = useState<'Deal Lost' | 'Disqualified' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Quote Sent popup state
+  const [showQuotePopup, setShowQuotePopup] = useState(false)
+  const [quoteLoading, setQuoteLoading] = useState(false)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
+  const [quoteConfirm, setQuoteConfirm] = useState(false)
+  const [supplierMargin, setSupplierMargin] = useState('')
+  const [quotationNumber, setQuotationNumber] = useState('')
+  const [productCategory, setProductCategory] = useState('')
+  const [quotationValue, setQuotationValue] = useState('')
+
   const calls = useMemo(
     () =>
       lead.activities.filter(
@@ -138,6 +149,16 @@ export function LeadDetailPanel({
       setLossStage(next)
       return
     }
+    if (next === 'Quote Sent') {
+      setQuoteError(null)
+      setQuoteConfirm(false)
+      setSupplierMargin('')
+      setQuotationNumber('')
+      setProductCategory('')
+      setQuotationValue('')
+      setShowQuotePopup(true)
+      return
+    }
     setError(null)
     try {
       await api.put(`/leads/${lead.id}/stage`, { stage: next })
@@ -145,6 +166,43 @@ export function LeadDetailPanel({
       onChanged()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to change stage')
+    }
+  }
+
+  async function submitQuoteSent() {
+    if (!supplierMargin || !quotationNumber.trim() || !productCategory.trim() || !quotationValue) {
+      setQuoteError('All fields are required')
+      return
+    }
+    if (Number(supplierMargin) < 0 || Number(supplierMargin) > 100) {
+      setQuoteError('Supplier margin must be between 0 and 100')
+      return
+    }
+    if (Number(quotationValue) <= 0) {
+      setQuoteError('Quotation value must be positive')
+      return
+    }
+    if (!quoteConfirm) {
+      setQuoteError('Please confirm the details by checking the box')
+      return
+    }
+    setQuoteError(null)
+    setQuoteLoading(true)
+    try {
+      await api.put(`/leads/${lead.id}/stage`, {
+        stage: 'Quote Sent',
+        supplierMargin: Number(supplierMargin),
+        quotationNumber: quotationNumber.trim(),
+        productCategory: productCategory.trim(),
+        quotationValue: Number(quotationValue),
+      })
+      setShowQuotePopup(false)
+      toast('Moved to Quote Sent')
+      onChanged()
+    } catch (err) {
+      setQuoteError(err instanceof ApiError ? err.message : 'Failed to change stage')
+    } finally {
+      setQuoteLoading(false)
     }
   }
 
@@ -404,6 +462,89 @@ export function LeadDetailPanel({
           onClose={() => setLossStage(null)}
           onDone={onChanged}
         />
+      )}
+
+      {showQuotePopup && (
+        <Modal title="Quote Details" onClose={() => setShowQuotePopup(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Enter the quotation details before moving to Quote Sent. These fields are locked after submission.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium">
+                  Supplier Margin (%) <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={supplierMargin}
+                  onChange={(e) => setSupplierMargin(e.target.value)}
+                  placeholder="e.g. 15"
+                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium">
+                  Quotation Number <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={quotationNumber}
+                  onChange={(e) => setQuotationNumber(e.target.value)}
+                  placeholder="e.g. QT-2026-001"
+                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium">
+                  Product Category <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={productCategory}
+                  onChange={(e) => setProductCategory(e.target.value)}
+                  placeholder="e.g. Industrial Equipment"
+                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium">
+                  Quotation Value (₹) <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={quotationValue}
+                  onChange={(e) => setQuotationValue(e.target.value)}
+                  placeholder="e.g. 125000"
+                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={quoteConfirm}
+                onChange={(e) => setQuoteConfirm(e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              I confirm these details are correct. This action cannot be undone.
+            </label>
+            {quoteError && <p className="text-sm text-destructive">{quoteError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowQuotePopup(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" disabled={quoteLoading} onClick={submitQuoteSent}>
+                {quoteLoading ? 'Moving…' : 'Confirm & Move to Quote Sent'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   )

@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Download, LayoutGrid, List, Plus, Upload, SlidersHorizontal } from 'lucide-react'
 import { api, ApiError } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
@@ -40,32 +40,81 @@ const filterControlClass =
   'h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary'
 
 export default function LeadsPage() {
+  return <Suspense><LeadsPageContent /></Suspense>
+}
+
+function LeadsPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const me = useCurrentUser()
 
   const leadTabs = leadTabsForRole(me?.role ?? 'admin')
 
-  const [initialized, setInitialized] = useState(false)
-  const [view, setView] = useState<'list' | 'kanban'>('list')
+  const STORAGE_KEY = 'leads-filters'
+
+  // Read initial filter values: URL params take priority, then sessionStorage.
+  // useMemo runs synchronously so state is initialised correctly on first render,
+  // avoiding the two-render race that caused filter resets with the old useEffect approach.
+  const initialFilters = useMemo(() => {
+    const hasUrlParams = searchParams.size > 0
+    if (hasUrlParams) {
+      const p = searchParams.get('page')
+      return {
+        stage: searchParams.get('stage') ?? '',
+        contactOutcome: searchParams.get('contactOutcome') ?? '',
+        priority: searchParams.get('priority') ?? '',
+        days: searchParams.get('days') ?? '',
+        fromDate: searchParams.get('from') ?? '',
+        toDate: searchParams.get('to') ?? '',
+        search: searchParams.get('search') ?? '',
+        sortBy: (searchParams.get('sortBy') as SortBy) ?? 'createdAt',
+        sortDir: (searchParams.get('sortDir') as SortDir) ?? 'desc',
+        view: (searchParams.get('view') as 'list' | 'kanban') ?? 'list',
+        page: p && /^\d+$/.test(p) ? Number(p) : 1,
+      }
+    }
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}')
+      return {
+        stage: cached.stage ?? '',
+        contactOutcome: cached.contactOutcome ?? '',
+        priority: cached.priority ?? '',
+        days: cached.days ?? '',
+        fromDate: cached.fromDate ?? '',
+        toDate: cached.toDate ?? '',
+        search: cached.search ?? '',
+        sortBy: cached.sortBy ?? 'createdAt',
+        sortDir: cached.sortDir ?? 'desc',
+        view: cached.view ?? 'list',
+        page: cached.page ?? 1,
+      }
+    } catch {
+      return { stage: '', contactOutcome: '', priority: '', days: '', fromDate: '', toDate: '', search: '', sortBy: 'createdAt' as SortBy, sortDir: 'desc' as SortDir, view: 'list' as const, page: 1 }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // intentionally empty — only run once on mount
+
+  const initialized = useRef(false)
+  const [view, setView] = useState<'list' | 'kanban'>(initialFilters.view)
   const [showNewLead, setShowNewLead] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showRules, setShowRules] = useState(false)
   const [leads, setLeads] = useState<LeadRow[]>([])
   const [users, setUsers] = useState<OrgUser[]>([])
   const [stats, setStats] = useState<LeadStats | null>(null)
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(initialFilters.page)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
-  const [stage, setStage] = useState('') // '' = All tab
-  const [contactOutcome, setContactOutcome] = useState('') // '' | connected | not_received
-  const [priority, setPriority] = useState('')
-  const [days, setDays] = useState('')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
-  const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState<SortBy>('createdAt')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [stage, setStage] = useState(initialFilters.stage)
+  const [contactOutcome, setContactOutcome] = useState(initialFilters.contactOutcome)
+  const [priority, setPriority] = useState(initialFilters.priority)
+  const [days, setDays] = useState(initialFilters.days)
+  const [fromDate, setFromDate] = useState(initialFilters.fromDate)
+  const [toDate, setToDate] = useState(initialFilters.toDate)
+  const [search, setSearch] = useState(initialFilters.search)
+  const [sortBy, setSortBy] = useState<SortBy>(initialFilters.sortBy)
+  const [sortDir, setSortDir] = useState<SortDir>(initialFilters.sortDir)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -76,50 +125,14 @@ export default function LeadsPage() {
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
-  const STORAGE_KEY = 'leads-filters'
-
-  // Read filter state from URL on first mount so back-navigation restores filters.
-  // If URL has no params, restore from sessionStorage (survives sidebar navigation).
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const hasUrlParams = [...params.keys()].length > 0
-
-    if (hasUrlParams) {
-      if (params.get('stage')) setStage(params.get('stage')!)
-      if (params.get('contactOutcome')) setContactOutcome(params.get('contactOutcome')!)
-      if (params.get('priority')) setPriority(params.get('priority')!)
-      if (params.get('days')) setDays(params.get('days')!)
-      if (params.get('from')) setFromDate(params.get('from')!)
-      if (params.get('to')) setToDate(params.get('to')!)
-      if (params.get('search')) setSearch(params.get('search')!)
-      if (params.get('sortBy')) setSortBy(params.get('sortBy') as SortBy)
-      if (params.get('sortDir')) setSortDir(params.get('sortDir') as SortDir)
-      if (params.get('view')) setView(params.get('view') as 'list' | 'kanban')
-      const p = params.get('page')
-      if (p && /^\d+$/.test(p)) setPage(Number(p))
-    } else {
-      try {
-        const cached = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}')
-        if (cached.stage) setStage(cached.stage)
-        if (cached.contactOutcome) setContactOutcome(cached.contactOutcome)
-        if (cached.priority) setPriority(cached.priority)
-        if (cached.days) setDays(cached.days)
-        if (cached.fromDate) setFromDate(cached.fromDate)
-        if (cached.toDate) setToDate(cached.toDate)
-        if (cached.search) setSearch(cached.search)
-        if (cached.sortBy) setSortBy(cached.sortBy)
-        if (cached.sortDir) setSortDir(cached.sortDir)
-        if (cached.view) setView(cached.view)
-        if (cached.page) setPage(cached.page)
-      } catch {}
-    }
-    setInitialized(true)
-  }, [])
-
-  // Sync filters back to URL whenever they change (only after initialization).
+  // Sync filters back to URL whenever they change. Skip the very first render
+  // (initialized.current is false) so we don't clobber a URL that was just read.
   // Also persist to sessionStorage so sidebar navigation restores filters.
   useEffect(() => {
-    if (!initialized) return
+    if (!initialized.current) {
+      initialized.current = true
+      return
+    }
     const params = new URLSearchParams()
     if (stage) params.set('stage', stage)
     if (contactOutcome) params.set('contactOutcome', contactOutcome)
@@ -142,7 +155,7 @@ export default function LeadsPage() {
       }))
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, contactOutcome, priority, days, fromDate, toDate, search, page, sortBy, sortDir, view, initialized])
+  }, [stage, contactOutcome, priority, days, fromDate, toDate, search, page, sortBy, sortDir, view])
 
   useEffect(() => {
     api
@@ -549,7 +562,7 @@ export default function LeadsPage() {
                 variant="outline"
                 size="sm"
                 disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => setPage((p: number) => Math.max(1, p - 1))}
               >
                 Previous
               </Button>
@@ -557,7 +570,7 @@ export default function LeadsPage() {
                 variant="outline"
                 size="sm"
                 disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))}
               >
                 Next
               </Button>

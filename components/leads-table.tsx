@@ -14,9 +14,10 @@ import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { otherStages } from '@/lib/lead-stages'
 import { LEAD_PRIORITIES } from '@/lib/validation'
+import { useHasPermission } from '@/lib/use-current-user'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
-import { formatDate } from '@/lib/utils'
+import { formatDate, getHoursUntil, isSlaOverdue } from '@/lib/utils'
 import { LeadDetailDrawer } from '@/components/lead-detail-drawer'
 import { LeadActivityPopover, type PopoverAnchor } from '@/components/lead-activity-popover'
 import type { SubTab } from '@/components/lead-detail-panel'
@@ -27,6 +28,7 @@ export interface LeadRow {
   stage: string
   priority: string
   slaBreached: boolean
+  slaDeadline: string
   createdAt: string
   lastActivityAt: string
   contact: { firstName: string; lastName: string; email: string; phone?: string | null } | null
@@ -124,6 +126,9 @@ export function LeadsTable({
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const canEdit = useHasPermission('leads:edit')
+  const canAssign = useHasPermission('leads:assign')
 
   const allSelected = data.length > 0 && data.every((l) => selected.has(l.id))
   const virtualize = data.length > VIRTUALIZE_THRESHOLD
@@ -335,7 +340,7 @@ export function LeadsTable({
                     )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    {stageOptions.length === 0 ? (
+                    {stageOptions.length === 0 || !canEdit ? (
                       <Badge variant={STAGE_VARIANT[lead.stage] || 'default'}>{lead.stage}</Badge>
                     ) : (
                       <select
@@ -355,35 +360,43 @@ export function LeadsTable({
                     )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    <select
-                      value={lead.priority}
-                      disabled={busy}
-                      onChange={(e) => changePriority(lead, e.target.value)}
-                      aria-label={`Priority for ${lead.companyName}`}
-                      className={cellSelectClass}
-                    >
-                      {LEAD_PRIORITIES.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
+                    {canEdit ? (
+                      <select
+                        value={lead.priority}
+                        disabled={busy}
+                        onChange={(e) => changePriority(lead, e.target.value)}
+                        aria-label={`Priority for ${lead.companyName}`}
+                        className={cellSelectClass}
+                      >
+                        {LEAD_PRIORITIES.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Badge variant="outline">{lead.priority}</Badge>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    <select
-                      value={lead.assignedToId || lead.assignedTo?.id || ''}
-                      disabled={busy}
-                      onChange={(e) => e.target.value && changeAssignee(lead, e.target.value)}
-                      aria-label={`Assignee for ${lead.companyName}`}
-                      className={cellSelectClass}
-                    >
-                      <option value="">Unassigned</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.fullName}
-                        </option>
-                      ))}
-                    </select>
+                    {canAssign ? (
+                      <select
+                        value={lead.assignedToId || lead.assignedTo?.id || ''}
+                        disabled={busy}
+                        onChange={(e) => e.target.value && changeAssignee(lead, e.target.value)}
+                        aria-label={`Assignee for ${lead.companyName}`}
+                        className={cellSelectClass}
+                      >
+                        <option value="">Unassigned</option>
+                        {users.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.fullName}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-sm">{lead.assignedTo?.fullName || '—'}</span>
+                    )}
                   </td>
                   <td
                     className="whitespace-nowrap px-4 py-2 text-muted-foreground"
@@ -392,8 +405,12 @@ export function LeadsTable({
                     {lead.createdBy?.fullName || '—'}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    {lead.slaBreached ? (
+                    {['Closed Won', 'Deal Lost', 'Disqualified'].includes(lead.stage) ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : lead.slaBreached || isSlaOverdue(lead.slaDeadline) ? (
                       <Badge variant="destructive">Breached</Badge>
+                    ) : getHoursUntil(lead.slaDeadline) <= 2 ? (
+                      <Badge variant="warning">{getHoursUntil(lead.slaDeadline)}h left</Badge>
                     ) : (
                       <Badge variant="success">On track</Badge>
                     )}

@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +13,10 @@ import { QuotationChangesCard } from '@/components/dashboard/quotation-changes-c
 import { ViewAsBanner } from '@/components/ViewAsBanner'
 
 export default function AdminDashboardPage() {
+  return <Suspense><AdminDashboardPageContent /></Suspense>
+}
+
+function AdminDashboardPageContent() {
   useDashboardRoleGuard()
   const me = useCurrentUser()
   const searchParams = useSearchParams()

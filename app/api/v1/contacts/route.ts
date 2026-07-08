@@ -55,17 +55,29 @@ export const GET = withErrorHandler(async (req) => {
   const url = new URL(req.url)
   const { page, limit, skip } = getPaginationParams(url.searchParams)
   const search = url.searchParams.get('search')
+  // Exact-match params for duplicate detection (used by the new-lead form)
+  const phoneExact = url.searchParams.get('phone')
+  const emailExact = url.searchParams.get('email')
 
   const where = {
     orgId,
-    ...(search && {
-      OR: [
-        { firstName: { contains: search, mode: 'insensitive' as const } },
-        { lastName: { contains: search, mode: 'insensitive' as const } },
-        { email: { contains: search, mode: 'insensitive' as const } },
-        { phone: { contains: search, mode: 'insensitive' as const } },
-      ],
-    }),
+    ...(phoneExact || emailExact
+      ? {
+          OR: [
+            ...(phoneExact ? [{ phone: phoneExact }] : []),
+            ...(emailExact ? [{ email: emailExact }] : []),
+          ],
+        }
+      : search
+      ? {
+          OR: [
+            { firstName: { contains: search, mode: 'insensitive' as const } },
+            { lastName: { contains: search, mode: 'insensitive' as const } },
+            { email: { contains: search, mode: 'insensitive' as const } },
+            { phone: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {}),
   }
 
   const [contacts, total] = await Promise.all([

@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useCurrentUser } from '@/lib/use-current-user'
@@ -9,6 +10,10 @@ import { RecentLeadsCard } from '@/components/dashboard/recent-leads-card'
 import { ViewAsBanner } from '@/components/ViewAsBanner'
 
 export default function MarketingDashboardPage() {
+  return <Suspense><MarketingDashboardPageContent /></Suspense>
+}
+
+function MarketingDashboardPageContent() {
   useDashboardRoleGuard()
   const me = useCurrentUser()
   const searchParams = useSearchParams()
