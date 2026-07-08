@@ -70,6 +70,7 @@ export const POST = withErrorHandler(async (req) => {
 })
 
 // GET /api/v1/leads - List leads with pagination & filters
+// Admin may pass ?viewAsUserId=<id> to see leads scoped to another user's role.
 export const GET = withErrorHandler(async (req) => {
   const ctx = await validateRequest(req)
   rbacService.requirePermission(
@@ -79,6 +80,24 @@ export const GET = withErrorHandler(async (req) => {
 
   const url = new URL(req.url)
   const { page, limit, skip } = getPaginationParams(url.searchParams)
+
+  // Resolve effective user context for viewAs impersonation (admin only)
+  const viewAsUserId = url.searchParams.get('viewAsUserId')
+  let effectiveUserId = ctx.userId
+  let effectiveRole = ctx.role
+  let effectiveDepartment: string | null = ctx.department
+
+  if (viewAsUserId && ctx.role === 'admin') {
+    const viewAsUser = await prisma.user.findFirst({
+      where: { id: viewAsUserId, orgId: ctx.orgId },
+      select: { id: true, role: true, department: true },
+    })
+    if (viewAsUser) {
+      effectiveUserId = viewAsUser.id
+      effectiveRole = viewAsUser.role
+      effectiveDepartment = viewAsUser.department
+    }
+  }
 
   const stage = url.searchParams.get('stage')
   const priority = url.searchParams.get('priority')
@@ -113,7 +132,7 @@ export const GET = withErrorHandler(async (req) => {
     throw new ValidationError(`Invalid contactOutcome filter: ${contactOutcome}`)
   }
 
-  const ownershipFilter = buildOwnershipFilter(ctx.userId, ctx.role, ctx.department, 'leads')
+  const ownershipFilter = buildOwnershipFilter(effectiveUserId, effectiveRole, effectiveDepartment, 'leads')
 
   const where = {
     orgId: ctx.orgId,

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,6 +9,7 @@ import { useToast } from '@/components/ui/toast'
 import { useCurrentUser } from '@/lib/use-current-user'
 import { PermissionGate } from '@/components/permission-gate'
 import { PERMISSIONS } from '@/lib/rbac'
+import { dashboardRouteForRole } from '@/lib/dashboard-routes'
 
 interface Settings {
   autoAssignmentEnabled: boolean
@@ -69,6 +71,7 @@ const DESIGNATIONS = [
 export default function SettingsPage() {
   const { toast } = useToast()
   const me = useCurrentUser()
+  const router = useRouter()
   const isAdmin = me?.role === 'admin'
 
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -484,6 +487,18 @@ export default function SettingsPage() {
                                 Edit
                               </button>
                             </PermissionGate>
+                            {me?.role === 'admin' && user.id !== me?.id && user.role !== 'admin' && (
+                              <button
+                                onClick={() =>
+                                  router.push(
+                                    `${dashboardRouteForRole(user.role)}?viewAs=${user.id}`
+                                  )
+                                }
+                                className="text-xs text-muted-foreground hover:underline"
+                              >
+                                View as
+                              </button>
+                            )}
                             <PermissionGate permission="users:delete">
                               {user.status === 'active' && user.id !== me?.id && (
                                 <button

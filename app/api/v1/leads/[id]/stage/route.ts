@@ -38,7 +38,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   if (!parsed.success) {
     throw new ValidationError('Invalid stage change request', parsed.error.flatten())
   }
-  const { stage: toStage, reason, assignedToId } = parsed.data
+  const { stage: toStage, reason, reasonDetails, assignedToId } = parsed.data
   const fromStage = lead.stage
 
   // Validates legality of transition + gating rules (activities, checklists, reason)
@@ -71,6 +71,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
         ...(isLossPath && {
           status: toStage === 'Deal Lost' ? 'closed_lost' : 'disqualified',
           dealLostReason: reason,
+          dealLostDetails: reasonDetails || null,
           dealLostDate: now,
         }),
         ...(toStage === 'Closed Won' && { status: 'closed_won' }),
@@ -92,6 +93,11 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
       update: {},
     })
 
+    // Loss events read like "Lead moved to Deal Lost. [Reason: … | Details: …]"
+    const lossDescription = isLossPath
+      ? `Lead moved to ${toStage}. [Reason: ${reason}${reasonDetails ? ` | Details: ${reasonDetails}` : ''}]`
+      : reason
+
     await tx.timelineEvent.create({
       data: {
         timelineId: timeline.id,
@@ -99,8 +105,14 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
         title: assignee
           ? `Stage changed: ${fromStage} → ${toStage} · handed over to ${assignee.fullName}`
           : `Stage changed: ${fromStage} → ${toStage}`,
-        description: reason,
-        metadata: { oldStage: fromStage, newStage: toStage, reason, assignedToId: assignee?.id },
+        description: lossDescription,
+        metadata: {
+          oldStage: fromStage,
+          newStage: toStage,
+          reason,
+          reasonDetails,
+          assignedToId: assignee?.id,
+        },
         createdBy: ctx.userId,
       },
     })
@@ -112,6 +124,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     fromStage,
     toStage,
     reason,
+    reasonDetails,
   })
 
   return successResponse(updated)

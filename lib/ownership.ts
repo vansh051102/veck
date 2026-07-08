@@ -53,10 +53,10 @@ export function buildOwnershipFilter(
 
     case 'purchase':
       if (resource === 'leads') {
-        return { stage: { in: ['Qualified', 'Quote Sent'] } }
+        return { assignedToId: userId, stage: { in: ['Qualified', 'Quote Sent'] } }
       }
       if (resource === 'quotes' || resource === 'purchase_requests') {
-        return { lead: { stage: { in: ['Qualified', 'Quote Sent'] } } }
+        return { lead: { assignedToId: userId, stage: { in: ['Qualified', 'Quote Sent'] } } }
       }
       return {}
 
@@ -119,7 +119,7 @@ export async function canAccessLead(
       return lead.assignedToId === userId
 
     case 'purchase':
-      return ['Qualified', 'Quote Sent'].includes(lead.stage)
+      return lead.assignedToId === userId && ['Qualified', 'Quote Sent'].includes(lead.stage)
 
     case 'sales_purchase':
       return lead.assignedToId === userId || ['Qualified', 'Quote Sent'].includes(lead.stage)

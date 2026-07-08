@@ -10,26 +10,100 @@ export function isTerminalStage(stage: string): boolean {
   return (TERMINAL_STAGES as readonly string[]).includes(stage)
 }
 
-// Controlled vocabulary for Deal Lost / Disqualified reasons (from the SOP).
-// Free-text reasons are rejected so loss analytics stay queryable.
-export const DEAL_LOST_REASONS = [
-  'Purchased Elsewhere',
-  'No Requirement',
+// Controlled vocabulary for Deal Lost / Disqualified reasons. Disqualified and
+// Deal Lost have distinct lists (a lead is disqualified early — bad fit/contact
+// — vs lost late after a real opportunity). Free-text reasons are rejected so
+// loss analytics stay queryable; a free-text "details" field captures specifics.
+
+// Reasons for marking a lead DISQUALIFIED (early-funnel drop).
+export const DISQUALIFIED_REASONS = [
+  'Customer Unresponsive',
+  'Wrong Number / Invalid Contact',
+  'Customer Not Interested',
+  'Product Not Supplied by VECK',
+  'Specification Not Available',
+  'Quantity Not Commercially Viable',
+  'Location Not Serviceable',
+  'Price / Budget Mismatch',
+  'Payment / Credit Terms Not Acceptable',
+  'Delivery Timeline Not Feasible',
+  'Non-Genuine / Rate Enquiry',
+  'Competitor Enquiry',
+  'Customer Purchased Elsewhere',
   'Project Cancelled',
-  'Price Not Accepted',
-  'Delivery Timeline Not Accepted',
-  'Payment Terms Not Accepted',
-  'Product Not Suitable',
-  'No Response (6+ calls/WhatsApp)',
   'Requirement Postponed',
-  'Budget Issue',
-  'Credit Requirement Issue',
-  'Dormant',
+  'Requirement Outside VECK Scope',
+  'Material Cannot Be Sourced',
+  'Duplicate Lead',
+  'Management Decision',
+  'Other',
 ] as const
 
-export function isValidDealLostReason(reason: string): boolean {
-  return (DEAL_LOST_REASONS as readonly string[]).includes(reason)
+// Reasons for marking a deal LOST (late-funnel loss after a real opportunity).
+export const DEAL_LOST_REASONS = [
+  'Customer Purchased Elsewhere',
+  'Price Not Accepted',
+  'Budget Constraints',
+  'Payment Terms Not Accepted',
+  'Credit Facility Not Approved',
+  'Delivery Timeline Not Accepted',
+  'Product Specification Changed',
+  'Quantity Reduced / Not Commercially Viable',
+  'Requirement Postponed',
+  'Project Cancelled',
+  'Customer Not Responding',
+  'Existing Supplier Retained',
+  'Competitor Offered Better Terms',
+  'Material Cannot Be Sourced',
+  'Production / Supply Constraints',
+  'Transportation / Freight Issue',
+  'Commercial Terms Not Accepted',
+  'Management Decision',
+  'Customer Withdrew Enquiry',
+  'Other',
+] as const
+
+// Returns the controlled reason list for a terminal (loss) stage, or [] for
+// any non-loss stage.
+export function reasonsForStage(stage: string): readonly string[] {
+  if (stage === 'Disqualified') return DISQUALIFIED_REASONS
+  if (stage === 'Deal Lost') return DEAL_LOST_REASONS
+  return []
 }
+
+// True if `reason` is valid for moving a lead to the given loss stage.
+export function isValidReason(stage: string, reason: string): boolean {
+  return reasonsForStage(stage).includes(reason)
+}
+
+// Back-compat: accepts a reason valid for either loss stage.
+export function isValidDealLostReason(reason: string): boolean {
+  return (
+    (DEAL_LOST_REASONS as readonly string[]).includes(reason) ||
+    (DISQUALIFIED_REASONS as readonly string[]).includes(reason)
+  )
+}
+
+// Call outcomes for the "Log a Call" action. Only "Connected" counts as the
+// customer picking up; everything else maps to contactOutcome="not_received".
+export const CALL_OUTCOMES = [
+  'Connected',
+  'No Answer',
+  'Busy',
+  'Switched Off',
+  'Not Reachable',
+  'Wrong Number',
+  'Call Back Requested',
+] as const
+
+// Maps a call outcome to the lead.contactOutcome value that drives the
+// marketing Connected / Not Received tabs.
+export function contactOutcomeForCall(outcome: string): 'connected' | 'not_received' {
+  return outcome === 'Connected' ? 'connected' : 'not_received'
+}
+
+// Channels for the "Log a Message" action.
+export const MESSAGE_CHANNELS = ['WhatsApp', 'SMS', 'Email'] as const
 
 // All 7 workflow stages in display order.
 export const ALL_STAGES = [
@@ -43,9 +117,9 @@ export const ALL_STAGES = [
 ] as const
 
 // Stage movement is unrestricted: anyone with access to a lead can move it
-// to any other stage (including reopening a terminal one) — there is no
-// required sequence and no minimum-activity/checklist gate. Returns every
-// stage except the one the lead is currently in.
+// to any other stage. Access itself is role-scoped via canAccessLead() /
+// buildOwnershipFilter() — Purchase can only reach leads assigned to them
+// in Qualified or Quote Sent, which naturally limits what they can transition.
 export function otherStages(currentStage: string): string[] {
   return ALL_STAGES.filter((s) => s !== currentStage)
 }

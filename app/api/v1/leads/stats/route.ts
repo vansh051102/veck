@@ -42,11 +42,29 @@ async function computeAvgQualifiedToQuoteSentHours(orgId: string): Promise<numbe
 // GET /api/v1/leads/stats - Aggregate counts for the dashboard metric cards.
 // Ownership-filtered like /api/v1/analytics, plus role-specific extras
 // consumed by the per-role dashboards under app/(app)/dashboards/.
+// Admin may pass ?viewAsUserId=<id> to see stats scoped to another user's role.
 export const GET = withErrorHandler(async (req: Request) => {
   const ctx = await validateRequest(req)
-  const { orgId, userId } = ctx
-  const role = ctx.role
-  const department = ctx.department
+  const { orgId } = ctx
+  const url = new URL(req.url)
+  const viewAsUserId = url.searchParams.get('viewAsUserId')
+
+  // Resolve the effective user context: if admin is impersonating, scope to that user
+  let userId = ctx.userId
+  let role = ctx.role
+  let department: string | null = ctx.department
+
+  if (viewAsUserId && ctx.role === 'admin') {
+    const viewAsUser = await prisma.user.findFirst({
+      where: { id: viewAsUserId, orgId },
+      select: { id: true, role: true, department: true },
+    })
+    if (viewAsUser) {
+      userId = viewAsUser.id
+      role = viewAsUser.role
+      department = viewAsUser.department
+    }
+  }
 
   const ownershipFilter = buildOwnershipFilter(userId, role, department, 'leads')
   const leadsWhere = { orgId, ...ownershipFilter }

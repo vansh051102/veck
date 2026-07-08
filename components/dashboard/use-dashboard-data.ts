@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
 import type { DashboardStats, LeadSummary } from './types'
 
-export function useDashboardData() {
+export function useDashboardData(viewAsUserId?: string) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentLeads, setRecentLeads] = useState<LeadSummary[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -12,12 +12,13 @@ export function useDashboardData() {
 
   useEffect(() => {
     let cancelled = false
+    const suffix = viewAsUserId ? `&viewAsUserId=${viewAsUserId}` : ''
 
     async function load() {
       try {
         const [statsRes, leadsRes] = await Promise.all([
-          api.get<DashboardStats>('/leads/stats'),
-          api.get<LeadSummary[]>('/leads?limit=5'),
+          api.get<DashboardStats>(`/leads/stats${suffix ? `?${suffix.slice(1)}` : ''}`),
+          api.get<LeadSummary[]>(`/leads?limit=5${suffix}`),
         ])
         if (cancelled) return
         setStats(statsRes.data ?? null)
@@ -34,7 +35,7 @@ export function useDashboardData() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [viewAsUserId])
 
   return { stats, recentLeads, error, loading }
 }

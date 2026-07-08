@@ -1,5 +1,6 @@
 'use client'
 
+import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useCurrentUser } from '@/lib/use-current-user'
@@ -7,11 +8,14 @@ import { visibleStagesForRole } from '@/lib/lead-stages'
 import { useDashboardData } from '@/components/dashboard/use-dashboard-data'
 import { useDashboardRoleGuard } from '@/components/dashboard/use-dashboard-role-guard'
 import { RecentLeadsCard } from '@/components/dashboard/recent-leads-card'
+import { ViewAsBanner } from '@/components/ViewAsBanner'
 
 export default function AdminDashboardPage() {
   useDashboardRoleGuard()
   const me = useCurrentUser()
-  const { stats, recentLeads, error, loading } = useDashboardData()
+  const searchParams = useSearchParams()
+  const viewAsUserId = searchParams.get('viewAs') ?? undefined
+  const { stats, recentLeads, error, loading } = useDashboardData(viewAsUserId)
 
   if (loading) {
     return <div className="text-sm text-muted-foreground">Loading dashboard…</div>
@@ -23,6 +27,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {viewAsUserId && <ViewAsBanner viewAsUserId={viewAsUserId} />}
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         {me && (
