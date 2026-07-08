@@ -133,6 +133,7 @@ model AuditLog {
   @@index([userId])
   @@index([resourceType, resourceId])
   @@index([timestamp])
+  @@index([orgId, resourceType, action, timestamp])
 }
 
 model Settings {
@@ -295,6 +296,11 @@ model Lead {
   customFields      Json?
   tags              String[]  @default([])
 
+  // Stage-entry timestamps for pipeline-velocity metrics (set once, on first
+  // entry to each stage) — avoids scanning the audit log on the dashboard path.
+  qualifiedAt       DateTime?
+  quoteSentAt       DateTime?
+
   // SLA Tracking
   slaCreatedAt      DateTime  @default(now())
   slaDeadline       DateTime
@@ -327,6 +333,9 @@ model Lead {
   @@index([slaDeadline])
   @@index([createdAt])
   @@index([createdById])
+  @@index([orgId, stage])
+  @@index([orgId, status])
+  @@index([orgId, assignedToId, status])
   @@unique([orgId, externalId])
 }
 
@@ -425,6 +434,9 @@ model Activity {
   @@index([leadId])
   @@index([type])
   @@index([scheduledFor])
+  @@index([orgId])
+  @@index([orgId, createdBy, createdAt])
+  @@index([orgId, type, createdAt])
 }
 
 model Quote {

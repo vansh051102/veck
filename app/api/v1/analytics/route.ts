@@ -60,24 +60,34 @@ export const GET = withErrorHandler(async (req: Request) => {
   // Per-salesperson stats. Team-wide numbers are admin-only: everyone else
   // sees only their own row, so reps can't browse colleagues' performance.
   const statsUsers = role === 'admin' ? orgUsers : orgUsers.filter((u) => u.id === userId)
-  const salespersonStats = await Promise.all(
-    statsUsers.map(async (user) => {
-      const [assigned, won, activities] = await Promise.all([
-        prisma.lead.count({ where: { orgId, assignedToId: user.id } }),
-        prisma.lead.count({ where: { orgId, assignedToId: user.id, stage: 'Closed Won' } }),
-        prisma.activity.count({ where: { orgId, createdBy: user.id } }),
-      ])
-      return {
-        userId: user.id,
-        name: user.fullName,
-        role: user.role,
-        leadsAssigned: assigned,
-        leadsWon: won,
-        conversionRate: assigned > 0 ? Math.round((won / assigned) * 100) : 0,
-        activitiesLogged: activities,
-      }
-    })
-  )
+  const statsUserIds = statsUsers.map((u) => u.id)
+
+  // groupBy instead of 3-queries-per-user N+1.
+  const [assignedRows, wonRows, activityRows] = await Promise.all([
+    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: statsUserIds } }, _count: { _all: true } }),
+    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: statsUserIds }, stage: 'Closed Won' }, _count: { _all: true } }),
+    prisma.activity.groupBy({ by: ['createdBy'], where: { orgId, createdBy: { in: statsUserIds } }, _count: { _all: true } }),
+  ])
+  const assignedMap = new Map<string, number>()
+  for (const r of assignedRows) if (r.assignedToId) assignedMap.set(r.assignedToId, r._count._all)
+  const wonMap = new Map<string, number>()
+  for (const r of wonRows) if (r.assignedToId) wonMap.set(r.assignedToId, r._count._all)
+  const activityMap = new Map<string, number>()
+  for (const r of activityRows) if (r.createdBy) activityMap.set(r.createdBy, r._count._all)
+
+  const salespersonStats = statsUsers.map((user) => {
+    const assigned = assignedMap.get(user.id) ?? 0
+    const won = wonMap.get(user.id) ?? 0
+    return {
+      userId: user.id,
+      name: user.fullName,
+      role: user.role,
+      leadsAssigned: assigned,
+      leadsWon: won,
+      conversionRate: assigned > 0 ? Math.round((won / assigned) * 100) : 0,
+      activitiesLogged: activityMap.get(user.id) ?? 0,
+    }
+  })
 
   // Activity volume by day for last 30 days
   const activityByDay: Record<string, Record<string, number>> = {}

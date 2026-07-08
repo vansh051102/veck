@@ -90,6 +90,9 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
           productCategory,
           quotationValue,
         }),
+        // Stage-entry stamps (set once) for pipeline-velocity metrics.
+        ...(toStage === 'Qualified' && !lead.qualifiedAt && { qualifiedAt: now }),
+        ...(toStage === 'Quote Sent' && !lead.quoteSentAt && { quoteSentAt: now }),
       },
     })
 

@@ -8,8 +8,10 @@
 //   const perms = await rbacService.getUserPermissions(userId)
 //   rbacService.requirePermission(perms, 'leads:create')
 
+import { cache } from 'react'
 import { prisma } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
+import { ForbiddenError } from '@/lib/errors'
 
 const log = createChildLogger('rbac')
 
@@ -18,7 +20,9 @@ export interface UserPermissions {
   hasWildcard: boolean
 }
 
-export class PermissionDeniedError extends Error {
+// Extends ForbiddenError (AppError, 403) so a denied permission maps to a 403
+// via errorResponse instead of falling through to a generic 500.
+export class PermissionDeniedError extends ForbiddenError {
   constructor(public readonly permission: string) {
     super(`Missing required permission: ${permission}`)
     this.name = 'PermissionDeniedError'
@@ -32,47 +36,54 @@ export class PermissionResolutionError extends Error {
   }
 }
 
+// Per-request memoized resolution — a route that checks more than one
+// permission (or re-checks) hits the DB once. cache() is request-scoped in
+// the Next.js app router; outside a request it degrades to a plain call.
+const resolveUserPermissions = cache(async (userId: string): Promise<UserPermissions> => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, orgId: true },
+    })
+
+    if (!user) {
+      throw new PermissionResolutionError(`User ${userId} not found`)
+    }
+
+    // Admin role gets wildcard — short circuit
+    if (user.role === 'admin') {
+      return { permissions: ['*'], hasWildcard: true }
+    }
+
+    const role = await prisma.role.findFirst({
+      where: { orgId: user.orgId, name: user.role },
+    })
+
+    if (!role) {
+      // Role not found in DB — return empty permissions (deny all)
+      return { permissions: [], hasWildcard: false }
+    }
+
+    const permissions = (role.permissions as string[]) || []
+    return {
+      permissions,
+      hasWildcard: permissions.includes('*'),
+    }
+  } catch (error) {
+    if (error instanceof PermissionResolutionError) throw error
+    log.error({ err: error, userId }, 'getUserPermissions failed')
+    // On DB error, deny all permissions (fail closed)
+    return { permissions: [], hasWildcard: false }
+  }
+})
+
 export class RbacService {
   /**
    * Get the permissions for a user by looking up their Role record.
-   * Returns a cached result for the duration of the request (in-memory Map).
+   * Memoized per request via resolveUserPermissions.
    */
   async getUserPermissions(userId: string): Promise<UserPermissions> {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true, orgId: true },
-      })
-
-      if (!user) {
-        throw new PermissionResolutionError(`User ${userId} not found`)
-      }
-
-      // Admin role gets wildcard — short circuit
-      if (user.role === 'admin') {
-        return { permissions: ['*'], hasWildcard: true }
-      }
-
-      const role = await prisma.role.findFirst({
-        where: { orgId: user.orgId, name: user.role },
-      })
-
-      if (!role) {
-        // Role not found in DB — return empty permissions (deny all)
-        return { permissions: [], hasWildcard: false }
-      }
-
-      const permissions = (role.permissions as string[]) || []
-      return {
-        permissions,
-        hasWildcard: permissions.includes('*'),
-      }
-    } catch (error) {
-      if (error instanceof PermissionResolutionError) throw error
-      log.error({ err: error, userId }, 'getUserPermissions failed')
-      // On DB error, deny all permissions (fail closed)
-      return { permissions: [], hasWildcard: false }
-    }
+    return resolveUserPermissions(userId)
   }
 
   /**

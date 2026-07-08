@@ -3,35 +3,21 @@ import { buildOwnershipFilter } from '@/lib/rbac'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 
-// Averages the Qualified -> Quote Sent gap across the org from STAGE_CHANGE
-// audit entries (lib/auth.ts logAudit, written by the stage-change route).
-// Org-wide rather than ownership-filtered: this is a pipeline-velocity
-// metric, not per-user data, and a lead's history survives it moving past
-// Quote Sent (e.g. to Closed Won), which a current-stage filter would miss.
+// Averages the Qualified -> Quote Sent gap across the org from the per-lead
+// stage-entry stamps (Lead.qualifiedAt / Lead.quoteSentAt, set once on first
+// entry to each stage). Bounded + indexed (orgId), so it stays cheap on the
+// dashboard path instead of scanning the whole audit log. Org-wide: the stamps
+// survive the lead moving past Quote Sent (e.g. to Closed Won).
 async function computeAvgQualifiedToQuoteSentHours(orgId: string): Promise<number | null> {
-  const events = await prisma.auditLog.findMany({
-    where: { orgId, resourceType: 'Lead', action: 'STAGE_CHANGE' },
-    select: { resourceId: true, changes: true, timestamp: true },
-    orderBy: { timestamp: 'asc' },
+  const leads = await prisma.lead.findMany({
+    where: { orgId, qualifiedAt: { not: null }, quoteSentAt: { not: null } },
+    select: { qualifiedAt: true, quoteSentAt: true },
   })
 
-  const enteredQualified = new Map<string, Date>()
-  const enteredQuoteSent = new Map<string, Date>()
-  for (const event of events) {
-    const changes = event.changes as { toStage?: string } | null
-    if (changes?.toStage === 'Qualified' && !enteredQualified.has(event.resourceId)) {
-      enteredQualified.set(event.resourceId, event.timestamp)
-    }
-    if (changes?.toStage === 'Quote Sent' && !enteredQuoteSent.has(event.resourceId)) {
-      enteredQuoteSent.set(event.resourceId, event.timestamp)
-    }
-  }
-
   const diffsHours: number[] = []
-  for (const [leadId, quoteSentAt] of enteredQuoteSent) {
-    const qualifiedAt = enteredQualified.get(leadId)
-    if (!qualifiedAt) continue
-    const hours = (quoteSentAt.getTime() - qualifiedAt.getTime()) / (1000 * 60 * 60)
+  for (const lead of leads) {
+    if (!lead.qualifiedAt || !lead.quoteSentAt) continue
+    const hours = (lead.quoteSentAt.getTime() - lead.qualifiedAt.getTime()) / (1000 * 60 * 60)
     if (hours >= 0) diffsHours.push(hours)
   }
 

@@ -92,6 +92,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
           slaCreatedAt: now,
           slaDeadline: calculateSlaDeadline('Quote Sent', now),
           slaBreached: false,
+          ...(!lead.quoteSentAt && { quoteSentAt: now }),
         },
       })
 

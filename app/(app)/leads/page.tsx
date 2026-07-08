@@ -244,30 +244,26 @@ function LeadsPageContent() {
     setSelected((prev) => (prev.size === leads.length ? new Set() : new Set(leads.map((l) => l.id))))
   }
 
-  async function bulkRun(fn: (id: string) => Promise<unknown>, successMsg: string) {
+  async function bulkUpdate(payload: { assignedToId?: string; priority?: string }, successMsg: string) {
     setBulkBusy(true)
     const ids = Array.from(selected)
-    const results = await Promise.allSettled(ids.map(fn))
-    const failed = results.filter((r) => r.status === 'rejected').length
-    setBulkBusy(false)
-    if (failed > 0) {
-      const firstError = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
-      toast(
-        `${failed}/${ids.length} failed: ${toFormErrors(firstError.reason, 'Update failed').message}`,
-        'error'
-      )
-    } else {
+    try {
+      await api.put('/leads/bulk', { ids, ...payload })
       toast(successMsg)
+    } catch (err) {
+      toast(toFormErrors(err, 'Bulk update failed').message, 'error')
+    } finally {
+      setBulkBusy(false)
+      refresh()
     }
-    refresh()
   }
 
   function bulkAssign(assignedToId: string) {
-    bulkRun((id) => api.put(`/leads/${id}/assign`, { assignedToId }), `${selected.size} lead(s) reassigned`)
+    bulkUpdate({ assignedToId }, `${selected.size} lead(s) reassigned`)
   }
 
   function bulkPriority(p: string) {
-    bulkRun((id) => api.put(`/leads/${id}`, { priority: p }), `${selected.size} lead(s) set to ${p}`)
+    bulkUpdate({ priority: p }, `${selected.size} lead(s) set to ${p}`)
   }
 
   const metricCards = stats
