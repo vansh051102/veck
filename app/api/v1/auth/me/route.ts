@@ -1,25 +1,16 @@
 import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
 import { getUserPermissions } from '@/lib/rbac'
+import { validateRequest } from '@/lib/middleware/validate-headers'
+import { prisma } from '@/lib/db'
 
 export const GET = withErrorHandler(async (req) => {
-  // Get session from request
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    throw new UnauthorizedError('Missing or invalid authorization header')
-  }
+  // DB-verified identity (existence, active status, org match) — same boundary
+  // every other route uses instead of trusting middleware headers directly.
+  const ctx = await validateRequest(req)
 
-  // Get user from database using headers set by middleware
-  const userId = req.headers.get('x-user-id')
-  const orgId = req.headers.get('x-org-id')
-
-  if (!userId || !orgId) {
-    throw new UnauthorizedError('User context not found')
-  }
-
-  // Fetch user with organization
-  const { prisma } = await import('@/lib/db')
+  // Fetch user with organization for the client bootstrap payload
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: ctx.userId },
     include: {
       org: {
         select: {
@@ -37,7 +28,7 @@ export const GET = withErrorHandler(async (req) => {
   }
 
   // Fetch permissions from the Role table
-  const permissions = await getUserPermissions(userId)
+  const permissions = await getUserPermissions(ctx.userId)
 
   return successResponse({
     user: {

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { IndiaMartWebhookSchema, type IndiaMartLeadResponse } from '@/lib/validation'
 import { webhookLimiter, rateLimitResponse } from '@/lib/rate-limit'
+import { secureEqual } from '@/lib/secure-compare'
 
 interface Params {
   params: { secret: string }
@@ -83,7 +84,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  if (params.secret !== webhookSecret) {
+  if (!secureEqual(params.secret, webhookSecret)) {
     return NextResponse.json({ error: 'Invalid webhook secret' }, { status: 401 })
   }
 

@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { UpdatePurchaseRequestSchema } from '@/lib/validation'
-import { PERMISSIONS } from '@/lib/rbac'
+import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
@@ -26,6 +26,10 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
   const pr = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId } })
   if (!pr) throw new NotFoundError('Purchase request')
 
+  if (!await canAccessLead(ctx.userId, ctx.role, pr.leadId)) {
+    throw new NotFoundError('Purchase request')
+  }
+
   return successResponse(pr)
 })
 
@@ -37,6 +41,10 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 
   const existing = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Purchase request')
+
+  if (!await canAccessLead(ctx.userId, ctx.role, existing.leadId)) {
+    throw new NotFoundError('Purchase request')
+  }
 
   const body = await req.json()
   const { status, ...rest } = body as { status?: string; [key: string]: unknown }

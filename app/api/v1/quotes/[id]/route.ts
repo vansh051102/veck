@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { UpdateQuoteSchema } from '@/lib/validation'
-import { PERMISSIONS } from '@/lib/rbac'
+import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
@@ -32,6 +32,10 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
   const quote = await prisma.quote.findFirst({ where: { id: params.id, orgId } })
   if (!quote) throw new NotFoundError('Quote')
 
+  if (!await canAccessLead(ctx.userId, ctx.role, quote.leadId)) {
+    throw new NotFoundError('Quote')
+  }
+
   return successResponse(quote)
 })
 
@@ -43,6 +47,11 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 
   const existing = await prisma.quote.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Quote')
+
+  if (!await canAccessLead(ctx.userId, ctx.role, existing.leadId)) {
+    throw new NotFoundError('Quote')
+  }
+
   if (existing.status !== 'draft') {
     throw new ConflictError(`Cannot edit a quote with status "${existing.status}"`)
   }

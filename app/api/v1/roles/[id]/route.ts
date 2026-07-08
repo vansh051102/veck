@@ -9,8 +9,18 @@ interface Params {
   params: { id: string }
 }
 
+// Only real permission strings are accepted. Wildcards ('*') are implicitly
+// rejected because they are not members of PERMISSIONS — admin '*' is granted
+// by role name, never stored on a custom role.
+const ALL_PERMISSIONS = Object.values(PERMISSIONS) as string[]
+
 const UpdateRoleSchema = z.object({
-  permissions: z.array(z.string()).min(1, 'At least one permission is required'),
+  permissions: z
+    .array(z.string())
+    .min(1, 'At least one permission is required')
+    .refine((perms) => perms.every((p) => ALL_PERMISSIONS.includes(p)), {
+      message: 'Contains an unknown or disallowed permission',
+    }),
   description: z.string().nullable().optional(),
 })
 

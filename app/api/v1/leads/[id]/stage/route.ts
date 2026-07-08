@@ -75,6 +75,14 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
           dealLostDate: now,
         }),
         ...(toStage === 'Closed Won' && { status: 'closed_won' }),
+        // Reopening: moving back to any non-terminal stage clears the loss
+        // record and reopens the lead (fixes stuck status='closed_lost').
+        ...(!isLossPath && toStage !== 'Closed Won' && {
+          status: 'open',
+          dealLostReason: null,
+          dealLostDetails: null,
+          dealLostDate: null,
+        }),
         ...(assignee && { assignedToId: assignee.id, assignedAt: now }),
         ...(toStage === 'Quote Sent' && {
           supplierMargin,

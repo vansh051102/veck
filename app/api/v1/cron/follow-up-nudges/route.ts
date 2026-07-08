@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
 import { FOLLOW_UP_TITLE_PREFIX } from '@/lib/follow-up'
+import { secureEqual } from '@/lib/secure-compare'
 
 // GET /api/v1/cron/follow-up-nudges - Flag overdue Quote Sent follow-ups.
 //
@@ -11,7 +12,7 @@ import { FOLLOW_UP_TITLE_PREFIX } from '@/lib/follow-up'
 //   Authorization: Bearer <CRON_SECRET>
 export const GET = withErrorHandler(async (req: Request) => {
   const secret = process.env.CRON_SECRET
-  if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) {
+  if (!secret || !secureEqual(req.headers.get('authorization') ?? '', `Bearer ${secret}`)) {
     throw new UnauthorizedError('Invalid cron secret')
   }
 

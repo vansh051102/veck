@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { PermissionGate } from '@/components/permission-gate'
 import { RecentActivityCard } from '@/components/analytics/recent-activity-card'
 import { QuickActionsCard } from '@/components/analytics/quick-actions-card'
 
@@ -62,6 +63,14 @@ const ACTIVITY_COLORS: Record<string, string> = {
 const ACTIVITY_TYPES = ['call', 'email', 'note', 'meeting', 'task'] as const
 
 export default function AnalyticsPage() {
+  return (
+    <PermissionGate permission="analytics:read">
+      <AnalyticsContent />
+    </PermissionGate>
+  )
+}
+
+function AnalyticsContent() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)

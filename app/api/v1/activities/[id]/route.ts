@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { UpdateActivitySchema } from '@/lib/validation'
-import { PERMISSIONS } from '@/lib/rbac'
+import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
 import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
@@ -18,6 +18,10 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')
+
+  if (!await canAccessLead(ctx.userId, ctx.role, existing.leadId)) {
+    throw new NotFoundError('Activity')
+  }
 
   const body = await req.json()
   const parsed = UpdateActivitySchema.safeParse(body)
@@ -48,6 +52,10 @@ export const DELETE = withErrorHandler(async (req: Request, { params }: Params) 
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')
+
+  if (!await canAccessLead(ctx.userId, ctx.role, existing.leadId)) {
+    throw new NotFoundError('Activity')
+  }
 
   await prisma.activity.delete({ where: { id: params.id } })
 

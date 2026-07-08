@@ -2,7 +2,9 @@ import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { assertTransitionAllowed, calculateSlaDeadline } from '@/lib/workflow'
 import { SendQuoteSchema } from '@/lib/validation'
-import { PERMISSIONS } from '@/lib/rbac'
+import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
+import { createSopChecklistsForStage } from '@/lib/sop-checklists'
+import { createFollowUpSchedule } from '@/lib/follow-up'
 import {
   successResponse,
   withErrorHandler,
@@ -33,6 +35,11 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
     include: { lead: true },
   })
   if (!quote) throw new NotFoundError('Quote')
+
+  if (!await canAccessLead(ctx.userId, ctx.role, quote.leadId)) {
+    throw new NotFoundError('Quote')
+  }
+
   if (quote.status !== 'draft') {
     throw new ConflictError(`Cannot send a quote with status "${quote.status}"`)
   }
@@ -87,6 +94,11 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
           slaBreached: false,
         },
       })
+
+      // SOP Step 4: mirror PUT /leads/:id/stage — create the stage checklists
+      // and the 6-day follow-up schedule on the primary quote-send happy path.
+      await createSopChecklistsForStage(tx, lead.id, 'Quote Sent')
+      await createFollowUpSchedule(tx, { leadId: lead.id, orgId: ctx.orgId, createdBy: ctx.userId, from: now })
 
       await tx.timelineEvent.create({
         data: {

@@ -3,6 +3,8 @@ import { logAudit } from '@/lib/audit'
 import { ChecklistItemSchema } from '@/lib/validation'
 import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
+import { rbacService } from '@/lib/services/rbac.service'
+import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
 
 interface Params {
   params: { id: string; itemId: string }
@@ -14,12 +16,20 @@ interface Params {
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
   const { orgId, userId } = ctx
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.CHECKLISTS_EDIT
+  )
 
   const item = await prisma.checklistItem.findFirst({
     where: { id: params.itemId, checklistId: params.id },
     include: { checklist: { include: { lead: true, items: true } } },
   })
   if (!item || item.checklist.lead.orgId !== orgId) {
+    throw new NotFoundError('Checklist item')
+  }
+
+  if (!await canAccessLead(ctx.userId, ctx.role, item.checklist.lead.id)) {
     throw new NotFoundError('Checklist item')
   }
 

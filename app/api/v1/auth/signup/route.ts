@@ -1,4 +1,5 @@
 import { signUp } from '@/lib/auth'
+import { seedDefaultRoles } from '@/lib/seed-roles'
 import { successResponse, withErrorHandler, ValidationError } from '@/lib/api-response'
 import { authLimiter, rateLimitResponse } from '@/lib/rate-limit'
 import { z } from 'zod'
@@ -33,6 +34,11 @@ export const POST = withErrorHandler(async (req) => {
 
   // Create user and organization
   const result = await signUp(email, password, fullName, orgName)
+
+  // Seed default roles for the new org (fire-and-forget — don't block signup)
+  seedDefaultRoles(result.org.id).catch((err) =>
+    console.error(`Failed to seed roles for org ${result.org.id}:`, err)
+  )
 
   return successResponse(
     {

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
 import { TERMINAL_STAGES } from '@/lib/lead-stages'
+import { secureEqual } from '@/lib/secure-compare'
 
 // GET /api/v1/cron/sla-check - Flag leads whose SLA deadline has passed.
 //
@@ -13,7 +14,7 @@ import { TERMINAL_STAGES } from '@/lib/lead-stages'
 // terminal-stage leads are untouched.
 export const GET = withErrorHandler(async (req: Request) => {
   const secret = process.env.CRON_SECRET
-  if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) {
+  if (!secret || !secureEqual(req.headers.get('authorization') ?? '', `Bearer ${secret}`)) {
     throw new UnauthorizedError('Invalid cron secret')
   }
 
