@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useEscapeKey } from '@/lib/use-escape-key'
 
 interface ModalProps {
   title: string
@@ -13,13 +14,8 @@ interface ModalProps {
 export function Modal({ title, onClose, children }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  // Shared LIFO stack: a modal opened over the drawer closes alone on Escape.
+  useEscapeKey(onClose)
 
   return (
     <div

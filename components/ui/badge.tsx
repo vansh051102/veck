@@ -3,8 +3,10 @@ import { cn } from '@/lib/utils'
 const VARIANT_CLASSES: Record<string, string> = {
   default: 'bg-muted text-muted-foreground',
   primary: 'bg-primary/10 text-primary',
-  success: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  warning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  secondary: 'bg-secondary text-secondary-foreground',
+  outline: 'border border-border text-foreground',
+  success: 'bg-success/10 text-success',
+  warning: 'bg-warning/10 text-warning',
   destructive: 'bg-destructive/10 text-destructive',
 }
 

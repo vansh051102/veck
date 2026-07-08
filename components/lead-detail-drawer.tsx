@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
+import { useEscapeKey } from '@/lib/use-escape-key'
 import {
   LeadDetailPanel,
   type LeadDetailData,
@@ -44,13 +45,9 @@ export function LeadDetailDrawer({
     load()
   }, [load])
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  // Shared LIFO Escape stack — a reason modal opened over the drawer closes
+  // alone; a second Escape then closes the drawer.
+  useEscapeKey(onClose)
 
   const handleChanged = useCallback(() => {
     load()
