@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase-browser'
@@ -18,10 +18,10 @@ function LoginPageContent() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [diagnostic, setDiagnostic] = useState<string | null>(() => {
+  const diagnostic = useMemo(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
     return url ? null : 'WARN: NEXT_PUBLIC_SUPABASE_URL is not set'
-  })
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
