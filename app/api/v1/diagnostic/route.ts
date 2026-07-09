@@ -34,29 +34,22 @@ export const GET = async () => {
   }
 
   try {
-    // Use DO blocks for DDL that pgBouncer transaction mode blocks
-    await prisma.$queryRawUnsafe(`
-      DO $$ BEGIN
-        ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "orgId" TEXT;
-        ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "contactId" TEXT;
-        ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "companyId" TEXT;
-      END $$;
-    `)
-    await prisma.$queryRawUnsafe(`UPDATE "Timeline" SET "orgId" = (SELECT l."orgId" FROM "Lead" l WHERE l.id = "Timeline"."leadId") WHERE "orgId" IS NULL`)
-    await prisma.$queryRawUnsafe(`
-      DO $$ BEGIN
-        ALTER TABLE "Timeline" ALTER COLUMN "orgId" SET NOT NULL;
-        ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-        CREATE INDEX IF NOT EXISTS "Timeline_orgId_idx" ON "Timeline"("orgId");
-        ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-        CREATE INDEX IF NOT EXISTS "Timeline_contactId_idx" ON "Timeline"("contactId");
-        ALTER TABLE "AssignmentRule" ADD CONSTRAINT IF NOT EXISTS "AssignmentRule_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-        CREATE TABLE IF NOT EXISTS "RateLimit" ("id" TEXT NOT NULL, "orgId" TEXT NOT NULL, "endpoint" TEXT NOT NULL, "windowId" BIGINT NOT NULL, "count" INTEGER NOT NULL DEFAULT 0, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "RateLimit_pkey" PRIMARY KEY ("id"));
-        CREATE UNIQUE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_windowId_key" ON "RateLimit"("orgId", "endpoint", "windowId");
-        CREATE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_idx" ON "RateLimit"("orgId", "endpoint");
-        CREATE INDEX IF NOT EXISTS "RateLimit_updatedAt_idx" ON "RateLimit"("updatedAt");
-      END $$;
-    `)
+    // Migration: sync pending schema changes. Uses $executeRawUnsafe for DDL.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "orgId" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "contactId" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "companyId" TEXT`)
+    await prisma.$executeRawUnsafe(`UPDATE "Timeline" SET "orgId" = (SELECT l."orgId" FROM "Lead" l WHERE l.id = "Timeline"."leadId") WHERE "orgId" IS NULL`)
+    // DO block wraps remaining DDL to avoid pgBouncer multi-statement limits
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ALTER COLUMN "orgId" SET NOT NULL`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Timeline_orgId_idx" ON "Timeline"("orgId")`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Timeline_contactId_idx" ON "Timeline"("contactId")`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "AssignmentRule" ADD CONSTRAINT IF NOT EXISTS "AssignmentRule_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "RateLimit" ("id" TEXT NOT NULL, "orgId" TEXT NOT NULL, "endpoint" TEXT NOT NULL, "windowId" BIGINT NOT NULL, "count" INTEGER NOT NULL DEFAULT 0, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "RateLimit_pkey" PRIMARY KEY ("id"))`)
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_windowId_key" ON "RateLimit"("orgId", "endpoint", "windowId")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_idx" ON "RateLimit"("orgId", "endpoint")`)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "RateLimit_updatedAt_idx" ON "RateLimit"("updatedAt")`)
     checks.migrationApplied = 'YES'
   } catch (e: any) {
     checks.migrationApplied = `ERROR: ${e.message?.substring(0, 200)}`
