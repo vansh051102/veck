@@ -18,6 +18,10 @@ function LoginPageContent() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [diagnostic, setDiagnostic] = useState<string | null>(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    return url ? null : 'WARN: NEXT_PUBLIC_SUPABASE_URL is not set'
+  })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -29,6 +33,7 @@ function LoginPageContent() {
     if (signInError) {
       setLoading(false)
       setError(signInError.message)
+      console.error('Sign in error:', signInError)
       return
     }
 
@@ -100,6 +105,7 @@ function LoginPageContent() {
             />
           </div>
 
+          {diagnostic && <p className="text-sm text-yellow-600 bg-yellow-50 dark:bg-yellow-950 p-2 rounded">{diagnostic}</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <Button type="submit" disabled={loading} className="mt-2 w-full">
