@@ -83,6 +83,25 @@ export function errorResponse(error: unknown) {
     )
   }
 
+  if (error instanceof Error && error.name === 'AuthApiError') {
+    const authError = error as any
+    const statusCode = authError.status || 401
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'AUTH_ERROR',
+          message: authError.message || 'Authentication failed',
+        },
+        meta: {
+          statusCode,
+          timestamp: new Date().toISOString(),
+        },
+      },
+      { status: statusCode }
+    )
+  }
+
   if (error instanceof Error && error.name === 'PrismaClientKnownRequestError') {
     const prismaError = error as any
     let message = 'Database error'
