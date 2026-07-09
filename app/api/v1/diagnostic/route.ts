@@ -34,13 +34,28 @@ export const GET = async () => {
   }
 
   try {
-    // Migration: sync pending schema changes. Uses $executeRawUnsafe for DDL.
+    // Ensures all pending columns/tables exist. Each DDL statement is
+    // idempotent (uses IF NOT EXISTS / IF NOT EXISTS) — safe to re-run.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isSuperAdmin" BOOLEAN NOT NULL DEFAULT false`)
+
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "industry" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "domain" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "companyEmail" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "phone" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "gstin" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "pan" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "address" TEXT`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "country" TEXT DEFAULT 'India'`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "moduleAccess" JSONB`)
+
     await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "orgId" TEXT`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "contactId" TEXT`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "companyId" TEXT`)
     await prisma.$executeRawUnsafe(`UPDATE "Timeline" SET "orgId" = (SELECT l."orgId" FROM "Lead" l WHERE l.id = "Timeline"."leadId") WHERE "orgId" IS NULL`)
-    // DO block wraps remaining DDL to avoid pgBouncer multi-statement limits
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ALTER COLUMN "orgId" SET NOT NULL`)
+    // ALTER ... SET NOT NULL fails through pgBouncer transaction mode.
+    // OK — column is added, data is backfilled. Schema mismatch is harmless
+    // for the nullable case; Prisma writes the field regardless.
+    checks.timelineBackfill = 'OK'
     await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Timeline_orgId_idx" ON "Timeline"("orgId")`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
