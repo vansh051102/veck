@@ -36,7 +36,10 @@ export const GET = async () => {
   try {
     // Ensures all pending columns/tables exist. Each DDL statement is
     // idempotent (uses IF NOT EXISTS / IF NOT EXISTS) — safe to re-run.
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isSuperAdmin" BOOLEAN NOT NULL DEFAULT false`)
+    // The NOT NULL keyword in DDL causes syntax errors through pgBouncer
+    // transaction-mode prepared statements. Use DEFAULT instead and
+    // enforce NOT NULL at the application level.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isSuperAdmin" BOOLEAN DEFAULT false`)
 
     await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "industry" TEXT`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "Organization" ADD COLUMN IF NOT EXISTS "domain" TEXT`)
