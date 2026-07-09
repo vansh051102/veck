@@ -53,5 +53,18 @@ export const GET = async () => {
     checks.adminCreateUser = `THROW: ${e.message?.substring(0, 200)}`
   }
 
+  try {
+    const org = await prisma.organization.create({
+      data: {
+        name: 'Diag Org',
+        slug: `diag-${Date.now()}`,
+        subscriptionPlan: 'free',
+      },
+    })
+    checks.createOrg = `OK (org: ${org.id})`
+  } catch (e: any) {
+    checks.createOrg = `ERROR: ${e.message?.substring(0, 200)}`
+  }
+
   return NextResponse.json({ env: vars, checks })
 }
