@@ -51,9 +51,22 @@ export interface RequestContext {
  * Throws UnauthorizedError if the user is invalid.
  */
 export async function validateRequest(req: Request): Promise<RequestContext> {
-  const userId = req.headers.get('x-user-id')
-  const orgId = req.headers.get('x-org-id')
+  return verifyUserContext(
+    req.headers.get('x-user-id'),
+    req.headers.get('x-org-id')
+  )
+}
 
+/**
+ * DB-verify a user context from the middleware-injected identity. Shared by
+ * validateRequest (API routes, reads req.headers) and getActionContext (Server
+ * Actions, reads next/headers). This is the security boundary — the userId is
+ * trusted (JWT → Supabase → DB), role/status are re-fetched fresh.
+ */
+export async function verifyUserContext(
+  userId: string | null,
+  orgId: string | null
+): Promise<RequestContext> {
   if (!userId || !orgId) {
     throw new UnauthorizedError('Missing user context — request must go through middleware')
   }

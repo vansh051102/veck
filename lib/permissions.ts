@@ -64,6 +64,17 @@ export const PERMISSIONS = {
 
   // Reports
   REPORTS_READ: 'reports:read',
+
+  // ERP (Trading: customers, orders, inventory ledger, invoices, Tally sync)
+  ERP_CUSTOMERS_READ: 'erp_customers:read',
+  ERP_CUSTOMERS_EDIT: 'erp_customers:edit',
+  ERP_ORDERS_READ: 'erp_orders:read',
+  ERP_ORDERS_EDIT: 'erp_orders:edit',
+  ERP_INVENTORY_READ: 'erp_inventory:read',
+  ERP_INVENTORY_EDIT: 'erp_inventory:edit',
+  ERP_INVOICES_READ: 'erp_invoices:read',
+  ERP_INVOICES_EDIT: 'erp_invoices:edit',
+  ERP_TALLY_SYNC: 'erp_tally:sync',
 } as const
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -113,6 +124,13 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.ACTIVITIES_DELETE,
     PERMISSIONS.QUOTES_READ,
     PERMISSIONS.ANALYTICS_READ,
+    // ERP: sales managers own the CRM→ERP conversion + order/customer surface
+    PERMISSIONS.ERP_CUSTOMERS_READ,
+    PERMISSIONS.ERP_CUSTOMERS_EDIT,
+    PERMISSIONS.ERP_ORDERS_READ,
+    PERMISSIONS.ERP_ORDERS_EDIT,
+    PERMISSIONS.ERP_INVENTORY_READ,
+    PERMISSIONS.ERP_INVOICES_READ,
   ],
 
   sales_executive: [
@@ -136,6 +154,10 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.CHECKLISTS_CREATE,
     PERMISSIONS.CHECKLISTS_READ,
     PERMISSIONS.CHECKLISTS_EDIT,
+    // ERP: purchase team runs goods receipts (stock IN) and the Tally push
+    PERMISSIONS.ERP_INVENTORY_READ,
+    PERMISSIONS.ERP_INVENTORY_EDIT,
+    PERMISSIONS.ERP_TALLY_SYNC,
   ],
 
   sales_purchase: [

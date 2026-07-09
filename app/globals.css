@@ -4,7 +4,8 @@
 
 :root {
   color-scheme: light;
-  --background: 0 0% 100%;
+  /* Tinted off-white page so white cards lift off the surface. */
+  --background: 220 33% 98%;
   --foreground: 222 20% 12%;
   --card: 0 0% 100%;
   --card-foreground: 222 20% 12%;
@@ -12,14 +13,15 @@
   --popover-foreground: 222 20% 12%;
   --border: 220 14% 91%;
   --input: 220 14% 91%;
-  --ring: 222 89% 55%;
-  --muted: 220 14% 96%;
+  --ring: 222 68% 52%;
+  --muted: 220 16% 95%;
   --muted-foreground: 220 9% 40%;
-  --secondary: 220 14% 96%;
+  --secondary: 220 16% 95%;
   --secondary-foreground: 222 20% 12%;
-  --accent: 220 14% 96%;
+  --accent: 220 16% 95%;
   --accent-foreground: 222 20% 12%;
-  --primary: 222 89% 55%;
+  /* Desaturated blue — considered, not the default "AI blue". */
+  --primary: 222 68% 52%;
   --primary-foreground: 0 0% 100%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
@@ -39,14 +41,14 @@
   --popover-foreground: 210 20% 96%;
   --border: 220 15% 20%;
   --input: 220 15% 24%;
-  --ring: 217 91% 60%;
+  --ring: 217 70% 58%;
   --muted: 220 15% 16%;
   --muted-foreground: 220 12% 62%;
   --secondary: 220 15% 16%;
   --secondary-foreground: 210 20% 96%;
   --accent: 220 15% 18%;
   --accent-foreground: 210 20% 96%;
-  --primary: 217 91% 60%;
+  --primary: 217 70% 58%;
   --primary-foreground: 222 24% 8%;
   --destructive: 0 63% 55%;
   --destructive-foreground: 0 0% 100%;
@@ -63,6 +65,18 @@
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  /* Tabular figures — counts, currency and SLA numbers align in columns. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Headings feel intentional: tighter tracking, no orphaned last words. */
+h1, h2, h3, h4 {
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
 }
 
 /* Slide-over drawer entrance */

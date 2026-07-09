@@ -55,6 +55,11 @@ module.exports = {
         md: '0.5rem',
         sm: '0.375rem',
       },
+      boxShadow: {
+        // Tinted with the slate hue rather than pure black — reads softer,
+        // matches the cool neutral palette.
+        sm: '0 1px 2px 0 hsl(222 47% 11% / 0.06), 0 1px 3px 0 hsl(222 47% 11% / 0.04)',
+      },
     },
   },
   plugins: [],
