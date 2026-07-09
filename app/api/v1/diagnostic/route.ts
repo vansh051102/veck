@@ -2,23 +2,6 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { prisma } from '@/lib/db'
 
-const SQL = `
-ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "orgId" TEXT;
-UPDATE "Timeline" SET "orgId" = (SELECT l."orgId" FROM "Lead" l WHERE l.id = "Timeline"."leadId") WHERE "orgId" IS NULL;
-ALTER TABLE "Timeline" ALTER COLUMN "orgId" SET NOT NULL;
-ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-CREATE INDEX IF NOT EXISTS "Timeline_orgId_idx" ON "Timeline"("orgId");
-ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "contactId" TEXT;
-ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-CREATE INDEX IF NOT EXISTS "Timeline_contactId_idx" ON "Timeline"("contactId");
-ALTER TABLE "AssignmentRule" ADD CONSTRAINT IF NOT EXISTS "AssignmentRule_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "companyId" TEXT;
-CREATE TABLE IF NOT EXISTS "RateLimit" ("id" TEXT NOT NULL, "orgId" TEXT NOT NULL, "endpoint" TEXT NOT NULL, "windowId" BIGINT NOT NULL, "count" INTEGER NOT NULL DEFAULT 0, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "RateLimit_pkey" PRIMARY KEY ("id"));
-CREATE UNIQUE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_windowId_key" ON "RateLimit"("orgId", "endpoint", "windowId");
-CREATE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_idx" ON "RateLimit"("orgId", "endpoint");
-CREATE INDEX IF NOT EXISTS "RateLimit_updatedAt_idx" ON "RateLimit"("updatedAt");
-`
-
 export const GET = async () => {
   const vars = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || 'UNDEFINED',
@@ -51,7 +34,20 @@ export const GET = async () => {
   }
 
   try {
-    await prisma.$executeRawUnsafe(SQL)
+    await prisma.$queryRawUnsafe(`ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "orgId" TEXT`)
+    await prisma.$queryRawUnsafe(`UPDATE "Timeline" SET "orgId" = (SELECT l."orgId" FROM "Lead" l WHERE l.id = "Timeline"."leadId") WHERE "orgId" IS NULL`)
+    await prisma.$queryRawUnsafe(`ALTER TABLE "Timeline" ALTER COLUMN "orgId" SET NOT NULL`)
+    await prisma.$queryRawUnsafe(`ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+    await prisma.$queryRawUnsafe(`CREATE INDEX IF NOT EXISTS "Timeline_orgId_idx" ON "Timeline"("orgId")`)
+    await prisma.$queryRawUnsafe(`ALTER TABLE "Timeline" ADD COLUMN IF NOT EXISTS "contactId" TEXT`)
+    await prisma.$queryRawUnsafe(`ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+    await prisma.$queryRawUnsafe(`CREATE INDEX IF NOT EXISTS "Timeline_contactId_idx" ON "Timeline"("contactId")`)
+    await prisma.$queryRawUnsafe(`ALTER TABLE "AssignmentRule" ADD CONSTRAINT IF NOT EXISTS "AssignmentRule_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+    await prisma.$queryRawUnsafe(`ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "companyId" TEXT`)
+    await prisma.$queryRawUnsafe(`CREATE TABLE IF NOT EXISTS "RateLimit" ("id" TEXT NOT NULL, "orgId" TEXT NOT NULL, "endpoint" TEXT NOT NULL, "windowId" BIGINT NOT NULL, "count" INTEGER NOT NULL DEFAULT 0, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "RateLimit_pkey" PRIMARY KEY ("id"))`)
+    await prisma.$queryRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_windowId_key" ON "RateLimit"("orgId", "endpoint", "windowId")`)
+    await prisma.$queryRawUnsafe(`CREATE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_idx" ON "RateLimit"("orgId", "endpoint")`)
+    await prisma.$queryRawUnsafe(`CREATE INDEX IF NOT EXISTS "RateLimit_updatedAt_idx" ON "RateLimit"("updatedAt")`)
     checks.migrationApplied = 'YES'
   } catch (e: any) {
     checks.migrationApplied = `ERROR: ${e.message?.substring(0, 200)}`
