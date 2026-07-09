@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
+import { PERMISSIONS } from '@/lib/rbac'
+import { rbacService } from '@/lib/services/rbac.service'
 
 // Resolves the ?days=7|30|90 / ?from=&to= query params (same convention as
 // the leads list filter) into a concrete [start, end) window. No params at
@@ -25,6 +27,7 @@ function resolveCallWindow(url: URL): { start?: Date; end: Date } {
 // everyone else gets exactly one row - their own (scope: "own").
 export const GET = withErrorHandler(async (req: Request) => {
   const ctx = await validateRequest(req)
+  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ANALYTICS_READ)
   const { orgId, userId } = ctx
   const role = ctx.role
   const isAdmin = role === 'admin'

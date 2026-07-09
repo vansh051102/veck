@@ -78,7 +78,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 
     const timeline = await tx.timeline.upsert({
       where: { leadId: lead.id },
-      create: { leadId: lead.id },
+      create: { orgId, leadId: lead.id },
       update: {},
     })
 

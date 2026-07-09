@@ -5,6 +5,7 @@ import { LEAD_STAGES, LEAD_PRIORITIES } from '@/lib/validation'
 import { PERMISSIONS } from '@/lib/rbac'
 import { withErrorHandler, ValidationError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
+import { buildOwnershipFilter } from '@/lib/ownership'
 import { rbacService } from '@/lib/services/rbac.service'
 
 const EXPORT_LIMIT = 5000
@@ -32,6 +33,7 @@ export const GET = withErrorHandler(async (req: Request) => {
   const leads = await prisma.lead.findMany({
     where: {
       orgId,
+      ...buildOwnershipFilter(ctx.userId, ctx.role, ctx.department, 'leads'),
       ...(stage && { stage }),
       ...(priority && { priority }),
       ...(days && /^\d+$/.test(days)

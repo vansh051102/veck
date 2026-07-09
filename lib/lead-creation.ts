@@ -102,6 +102,7 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
 
     await tx.timeline.create({
       data: {
+        orgId: input.orgId,
         leadId: created.id,
         events: {
           create: {

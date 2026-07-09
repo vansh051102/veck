@@ -1,7 +1,8 @@
 import { signUp } from '@/lib/auth'
 import { seedDefaultRoles } from '@/lib/seed-roles'
 import { successResponse, withErrorHandler, ValidationError } from '@/lib/api-response'
-import { authLimiter, rateLimitResponse } from '@/lib/rate-limit'
+import { rateLimitResponse } from '@/lib/rate-limit'
+import { authLimiter } from '@/lib/rate-limit-db'
 import { z } from 'zod'
 
 const SignUpSchema = z.object({
@@ -13,7 +14,7 @@ const SignUpSchema = z.object({
 
 export const POST = withErrorHandler(async (req) => {
   // Rate limit: 10 signups per minute per IP
-  const { allowed, retryAfter } = authLimiter.check(req)
+  const { allowed, retryAfter } = await authLimiter.check(req)
   if (!allowed) return rateLimitResponse(retryAfter)
 
   const body = await req.json()

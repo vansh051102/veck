@@ -24,7 +24,7 @@ export const GET = withErrorHandler(async (req: Request) => {
       title: { startsWith: FOLLOW_UP_TITLE_PREFIX },
       scheduledFor: { lt: now },
     },
-    include: { lead: { select: { id: true, companyName: true, stage: true } } },
+    include: { lead: { select: { id: true, companyName: true, stage: true, orgId: true } } },
   })
 
   let nudged = 0
@@ -47,7 +47,7 @@ export const GET = withErrorHandler(async (req: Request) => {
       })
       const timeline = await tx.timeline.upsert({
         where: { leadId: task.lead.id },
-        create: { leadId: task.lead.id },
+        create: { orgId: task.lead.orgId, leadId: task.lead.id },
         update: {},
       })
       await tx.timelineEvent.create({

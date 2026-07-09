@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { IndiaMartWebhookSchema, type IndiaMartLeadResponse } from '@/lib/validation'
-import { webhookLimiter, rateLimitResponse } from '@/lib/rate-limit'
+import { rateLimitResponse } from '@/lib/rate-limit'
+import { webhookLimiter } from '@/lib/rate-limit-db'
 import { secureEqual } from '@/lib/secure-compare'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 
@@ -75,7 +76,7 @@ async function findOrCreateContact(orgId: string, createdById: string, lead: Ind
 // failures and malformed payloads, which ARE worth IndiaMART retrying/alerting on.
 export async function POST(req: Request, { params }: Params) {
   // Rate limit: 30 webhook calls per minute per IP
-  const { allowed, retryAfter } = webhookLimiter.check(req)
+  const { allowed, retryAfter } = await webhookLimiter.check(req)
   if (!allowed) return rateLimitResponse(retryAfter)
 
   // Validate webhook secret — required, no fallback
@@ -155,7 +156,7 @@ export async function POST(req: Request, { params }: Params) {
       // assignee knows this buyer re-submitted via IndiaMART.
       const timeline = await prisma.timeline.upsert({
         where: { leadId: result.existingLead.id },
-        create: { leadId: result.existingLead.id },
+        create: { orgId, leadId: result.existingLead.id },
         update: {},
       })
       await prisma.timelineEvent.create({

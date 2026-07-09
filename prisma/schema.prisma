@@ -2,7 +2,7 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // Include engines for both your Mac (native) and the Linux tooling
   // environment, so `prisma generate` from either side never strips the
   // other platform's engine out of node_modules.
@@ -19,32 +19,48 @@ datasource db {
 // ============================================================================
 
 model Organization {
-  id                  String   @id @default(uuid())
-  name                String
-  slug                String   @unique
-  subscriptionPlan    String   @default("free") // free, pro, enterprise
-  customFieldsConfig  Json?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                 String @id @default(uuid())
+  name               String
+  slug               String @unique
+  subscriptionPlan   String @default("free") // free, pro, enterprise
+  customFieldsConfig Json?
+
+  // Company details (admin workspace "Company Details" form)
+  industry     String?
+  domain       String?
+  companyEmail String?
+  phone        String?
+  gstin        String?
+  pan          String?
+  address      String?
+  country      String? @default("India")
+
+  // Per-company module toggles: { "leads": true, ... }. Missing key = enabled.
+  moduleAccess Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  users               User[]
-  roles               Role[]
-  auditLogs           AuditLog[]
-  settings            Settings?
-  leads               Lead[]
-  contacts            Contact[]
-  masters             Master[]
-  products            Product[]
-  suppliers           Supplier[]
-  customers           Customer[]
-  salesOrders         SalesOrder[]
-  purchaseOrders      PurchaseOrder[]
-  invoices            Invoice[]
-  inventory           Inventory[]
-  stockMovements      StockMovement[]
-  outstandings        Outstanding[]
-  tallySyncQueue      TallySyncQueue[]
+  users          User[]
+  memberships    Membership[]
+  roles          Role[]
+  auditLogs      AuditLog[]
+  settings       Settings?
+  leads          Lead[]
+  contacts       Contact[]
+  masters        Master[]
+  products       Product[]
+  suppliers      Supplier[]
+  customers      Customer[]
+  salesOrders    SalesOrder[]
+  purchaseOrders PurchaseOrder[]
+  invoices       Invoice[]
+  inventory      Inventory[]
+  stockMovements StockMovement[]
+  outstandings   Outstanding[]
+  tallySyncQueue TallySyncQueue[]
+  AssignmentRule AssignmentRule[]
 
   @@index([slug])
 }
@@ -54,35 +70,40 @@ model Organization {
 // ============================================================================
 
 model User {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  email             String
-  fullName          String
-  avatarUrl         String?
-  role              String    @default("user") // admin, manager, user, viewer
-  status            String    @default("active") // active, inactive, suspended
+  email     String
+  fullName  String
+  avatarUrl String?
+  role      String  @default("user") // admin, manager, user, viewer
+  status    String  @default("active") // active, inactive, suspended
+
+  // Platform-level admin: sees and administers ALL organizations in the
+  // admin workspace. Deliberately not settable via any API — bootstrap via SQL.
+  isSuperAdmin Boolean @default(false)
 
   // RBAC Fields
-  department        String?   // e.g. Marketing, Sales, Purchase, Management
-  designation       String?   // e.g. Marketing Executive, Sales Manager
-  reportsToId       String?   // self-referential FK (manager)
-  reportsTo         User?     @relation("ReportsTo", fields: [reportsToId], references: [id], onDelete: SetNull)
-  directReports     User[]    @relation("ReportsTo")
-  territory         String?   // e.g. "North India", "West India"
-  branch            String?   // e.g. "Delhi", "Mumbai"
-  defaultDashboard  String?   // route path to redirect after login
+  department       String? // e.g. Marketing, Sales, Purchase, Management
+  designation      String? // e.g. Marketing Executive, Sales Manager
+  reportsToId      String? // self-referential FK (manager)
+  reportsTo        User?   @relation("ReportsTo", fields: [reportsToId], references: [id], onDelete: SetNull)
+  directReports    User[]  @relation("ReportsTo")
+  territory        String? // e.g. "North India", "West India"
+  branch           String? // e.g. "Delhi", "Mumbai"
+  defaultDashboard String? // route path to redirect after login
 
-  lastLogin         DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   // Relations
-  auditLogs         AuditLog[]
-  assignedLeads     Lead[]    @relation("assignedTo")
-  createdLeads      Lead[]    @relation("createdBy")
-  assignedOrders    SalesOrder[] @relation("assignedTo")
+  auditLogs      AuditLog[]
+  assignedLeads  Lead[]       @relation("assignedTo")
+  createdLeads   Lead[]       @relation("createdBy")
+  assignedOrders SalesOrder[] @relation("assignedTo")
+  memberships    Membership[]
 
   @@unique([orgId, email])
   @@index([orgId])
@@ -91,21 +112,39 @@ model User {
   @@index([designation])
 }
 
-model Role {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+// User ↔ Organization many-to-many for the admin workspace. User.orgId stays
+// the user's HOME org (all existing app flows); a Membership with role="admin"
+// grants workspace-settings administration of that org via /admin.
+model Membership {
+  id        String       @id @default(uuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role      String       @default("member") // admin | member
+  status    String       @default("active") // active | revoked
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
-  name              String    // admin, marketing_manager, marketing_executive, sales_manager, sales_executive, purchase
-  permissions       Json      // ["leads:create", "leads:read", "leads:edit", ...]
-  description       String?
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+model Role {
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  name        String // admin, marketing_manager, marketing_executive, sales_manager, sales_executive, purchase
+  permissions Json // ["leads:create", "leads:read", "leads:edit", ...]
+  description String?
 
   // RBAC Fields
-  department        String?   // which department this role belongs to (null = org-wide like admin)
-  hierarchyLevel    Int       @default(0) // 0=base, 1=manager, 2=admin (for permission inheritance)
+  department     String? // which department this role belongs to (null = org-wide like admin)
+  hierarchyLevel Int     @default(0) // 0=base, 1=manager, 2=admin (for permission inheritance)
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -113,22 +152,22 @@ model Role {
 }
 
 model AuditLog {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  userId            String
-  user              User      @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  action            String    // created, updated, deleted, exported, imported
-  resourceType      String    // lead, contact, quote, order, user, settings
-  resourceId        String
-  resourceName      String?   // Human readable name
+  action       String // created, updated, deleted, exported, imported
+  resourceType String // lead, contact, quote, order, user, settings
+  resourceId   String
+  resourceName String? // Human readable name
 
-  changes           Json?     // { before: {}, after: {} }
-  ipAddress         String?
-  userAgent         String?
-  timestamp         DateTime  @default(now())
+  changes   Json? // { before: {}, after: {} }
+  ipAddress String?
+  userAgent String?
+  timestamp DateTime @default(now())
 
   @@index([orgId])
   @@index([userId])
@@ -138,31 +177,31 @@ model AuditLog {
 }
 
 model Settings {
-  id                    String    @id @default(uuid())
-  orgId                 String    @unique
-  org                   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String       @unique
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // SLA Settings
-  slaDefaultHours       Int       @default(24)
-  slaWarningHours       Int       @default(4)
+  slaDefaultHours Int @default(24)
+  slaWarningHours Int @default(4)
 
   // Business Settings
-  currency              String    @default("INR")
-  dateFormat            String    @default("DD/MM/YYYY")
-  timezone              String    @default("Asia/Kolkata")
+  currency   String @default("INR")
+  dateFormat String @default("DD/MM/YYYY")
+  timezone   String @default("Asia/Kolkata")
 
   // Workflow Settings
-  workflowStages        Json      // { stages: ["New Lead", "Contacted", "Qualified", ...] }
-  autoAssignmentEnabled Boolean   @default(false)
-  autoAssignmentRule    Json?     // { rule_type: "round_robin", field: "created_date" }
+  workflowStages        Json // { stages: ["New Lead", "Contacted", "Qualified", ...] }
+  autoAssignmentEnabled Boolean @default(false)
+  autoAssignmentRule    Json? // { rule_type: "round_robin", field: "created_date" }
 
   // Integration Settings
-  webhookUrl            String?
-  webhookSecret         String?
+  webhookUrl                String?
+  webhookSecret             String?
   emailNotificationsEnabled Boolean @default(true)
 
-  updatedAt             DateTime  @updatedAt
-  updatedBy             String
+  updatedAt DateTime @updatedAt
+  updatedBy String
 }
 
 // ============================================================================
@@ -175,7 +214,7 @@ model Settings {
 model OrgSequence {
   id        String   @id @default(uuid())
   orgId     String
-  key       String   // e.g. "QT-2026", "PR-2026"
+  key       String // e.g. "QT-2026", "PR-2026"
   value     Int      @default(0)
   updatedAt DateTime @updatedAt
 
@@ -183,23 +222,43 @@ model OrgSequence {
 }
 
 // ============================================================================
+// RATE LIMITING (DB-backed, for Vercel Hobby)
+// ============================================================================
+// Per-org, per-endpoint sliding-window rate limit count. Cleaned up by the
+// DBRateLimiter every 100th check; never accumulates more than ~10K rows at
+// 60 orgs × 4 endpoints × 4 windows/minute.
+
+model RateLimit {
+  id        String   @id @default(uuid())
+  orgId     String
+  endpoint  String // "auth:signup", "auth:signin", "api:general", "api:mutating"
+  windowId  BigInt // epoch ms / windowMs — identifies the current window
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, endpoint, windowId])
+  @@index([orgId, endpoint])
+  @@index([updatedAt])
+}
+
+// ============================================================================
 // MASTER DATA
 // ============================================================================
 
 model Master {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  type              String    // lead_source, industry, designation, product_category
-  key               String    // unique identifier within type
-  value             String    // display value
-  description       String?
-  displayOrder      Int       @default(0)
-  isActive          Boolean   @default(true)
+  type         String // lead_source, industry, designation, product_category
+  key          String // unique identifier within type
+  value        String // display value
+  description  String?
+  displayOrder Int     @default(0)
+  isActive     Boolean @default(true)
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([orgId, type, key])
   @@index([orgId, type])
@@ -210,35 +269,38 @@ model Master {
 // ============================================================================
 
 model Contact {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Personal Info
-  firstName         String
-  lastName          String
-  email             String
-  phone             String
-  alternatePhone    String?
-  designation       String?
-  gstNumber         String?
-  city              String?
+  firstName      String
+  lastName       String
+  email          String
+  phone          String
+  alternatePhone String?
+  designation    String?
+  gstNumber      String?
+  city           String?
 
   // Source & Metadata
-  source            String    // Website, LinkedIn, Referral, Email, Other
-  sourceDetails     Json?     // { url, campaign, medium, utm_source }
-  tags              String[]  @default([])
+  source        String // Website, LinkedIn, Referral, Email, Other
+  sourceDetails Json? // { url, campaign, medium, utm_source }
+  tags          String[] @default([])
 
   // Custom Fields
-  customFields      Json?
+  customFields Json?
 
   // Timestamps
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  createdById       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
 
   // Relations
-  leads             Lead[]
+  companyId String?
+  company   Customer?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  leads     Lead[]
+  Timeline  Timeline[]
 
   @@unique([orgId, email])
   @@unique([orgId, phone])
@@ -247,71 +309,71 @@ model Contact {
 }
 
 model Lead {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Contact & Company
-  contactId         String
-  contact           Contact   @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  companyName       String
+  contactId   String
+  contact     Contact @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  companyName String
 
   // Lead Workflow
-  stage             String    @default("New Lead") // New Lead, Contacted, Qualified, Quote Sent, Closed Won, Deal Lost, Disqualified
-  stageChangedAt    DateTime  @default(now())
-  stageChangedBy    String?
+  stage          String   @default("New Lead") // New Lead, Contacted, Qualified, Quote Sent, Closed Won, Deal Lost, Disqualified
+  stageChangedAt DateTime @default(now())
+  stageChangedBy String?
   // Outcome of the latest completed call: "connected" (customer picked up)
   // or "not_received" (no answer/busy). Drives the marketing team's
   // Connected / Not Received tabs within the Contacted stage.
-  contactOutcome    String?
+  contactOutcome String?
 
   // Classification
-  priority          String    @default("Medium") // Low, Medium, High, Urgent
-  status            String    @default("open") // open, closed_won, closed_lost, disqualified
-  dealLostReason    String?   // macro reason (from DEAL_LOST_REASONS / DISQUALIFIED_REASONS)
-  dealLostDetails   String?   // micro free-text detail explaining the reason
-  dealLostDate      DateTime?
+  priority        String    @default("Medium") // Low, Medium, High, Urgent
+  status          String    @default("open") // open, closed_won, closed_lost, disqualified
+  dealLostReason  String? // macro reason (from DEAL_LOST_REASONS / DISQUALIFIED_REASONS)
+  dealLostDetails String? // micro free-text detail explaining the reason
+  dealLostDate    DateTime?
 
   // Customer requirement captured on the lead (the "Requirements" tab)
-  requirement       String?
+  requirement String?
 
   // Quote Sent details (locked after stage transition to Quote Sent)
-  supplierMargin    Decimal?  @db.Decimal(5, 2)
-  quotationNumber   String?
-  productCategory   String?
-  quotationValue    Decimal?  @db.Decimal(12, 2)
+  supplierMargin  Decimal? @db.Decimal(5, 2)
+  quotationNumber String?
+  productCategory String?
+  quotationValue  Decimal? @db.Decimal(12, 2)
 
   // Assignment
-  assignedToId      String?
-  assignedTo        User?     @relation("assignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  assignedAt        DateTime?
+  assignedToId String?
+  assignedTo   User?     @relation("assignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedAt   DateTime?
 
   // Metadata
-  source            String?
-  sourceDetails     Json?
+  source        String?
+  sourceDetails Json?
   // Idempotency key for leads ingested from an external system (IndiaMART,
   // TradeIndia, website form, etc.) - lets a webhook handler safely retry
   // without creating duplicate leads for the same external event.
-  externalId        String?
-  notes             String?
-  customFields      Json?
-  tags              String[]  @default([])
+  externalId    String?
+  notes         String?
+  customFields  Json?
+  tags          String[] @default([])
 
   // Stage-entry timestamps for pipeline-velocity metrics (set once, on first
   // entry to each stage) — avoids scanning the audit log on the dashboard path.
-  qualifiedAt       DateTime?
-  quoteSentAt       DateTime?
+  qualifiedAt DateTime?
+  quoteSentAt DateTime?
 
   // SLA Tracking
-  slaCreatedAt      DateTime  @default(now())
-  slaDeadline       DateTime
-  slaBreached       Boolean   @default(false)
-  firstResponseAt   DateTime?
+  slaCreatedAt    DateTime  @default(now())
+  slaDeadline     DateTime
+  slaBreached     Boolean   @default(false)
+  firstResponseAt DateTime?
 
   // Engagement
-  viewCount         Int       @default(0)
-  lastViewedAt      DateTime?
-  lastActivityAt    DateTime  @default(now())
+  viewCount      Int       @default(0)
+  lastViewedAt   DateTime?
+  lastActivityAt DateTime  @default(now())
 
   // CRM→ERP conversion (idempotency): set once when the lead becomes a Customer
   // + SalesOrder. A non-null convertedCustomerId blocks a second conversion.
@@ -320,19 +382,20 @@ model Lead {
   convertedAt           DateTime?
 
   // Timestamps
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  createdById       String
-  createdBy         User      @relation("createdBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
+  createdBy   User     @relation("createdBy", fields: [createdById], references: [id])
 
   // Relations
-  checklists        Checklist[]
-  timeline          Timeline?
-  activities        Activity[]
-  quotes            Quote[]
-  purchaseRequests  PurchaseRequest[]
-  documents         LeadDocument[]
+  checklists       Checklist[]
+  timeline         Timeline?
+  activities       Activity[]
+  quotes           Quote[]
+  purchaseRequests PurchaseRequest[]
+  documents        LeadDocument[]
 
+  @@unique([orgId, externalId])
   @@index([orgId])
   @@index([stage])
   @@index([status])
@@ -343,100 +406,104 @@ model Lead {
   @@index([orgId, stage])
   @@index([orgId, status])
   @@index([orgId, assignedToId, status])
-  @@unique([orgId, externalId])
 }
 
 model Checklist {
-  id                String    @id @default(uuid())
-  leadId            String
-  lead              Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  title             String    // "Initial Qualification", "Technical Assessment"
-  description       String?
-  isRequired        Boolean   @default(false) // Block stage progression if incomplete
+  title       String // "Initial Qualification", "Technical Assessment"
+  description String?
+  isRequired  Boolean @default(false) // Block stage progression if incomplete
 
   // Items
-  items             ChecklistItem[]
+  items ChecklistItem[]
 
   // Completion
-  completedAt       DateTime?
-  completedBy       String?
+  completedAt DateTime?
+  completedBy String?
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
 }
 
 model ChecklistItem {
-  id                String    @id @default(uuid())
-  checklistId       String
-  checklist         Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid())
+  checklistId String
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
 
-  title             String
-  completed         Boolean   @default(false)
-  completedAt       DateTime?
-  completedBy       String?
+  title       String
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  completedBy String?
 
-  createdAt         DateTime  @default(now())
+  createdAt DateTime @default(now())
 }
 
 model Timeline {
-  id                String    @id @default(uuid())
-  leadId            String    @unique
-  lead              Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  orgId     String
+  leadId    String   @unique
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   // Events
-  events            TimelineEvent[]
+  events TimelineEvent[]
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
+  @@index([orgId])
+  @@index([contactId])
 }
 
 model TimelineEvent {
-  id                String    @id @default(uuid())
-  timelineId        String
-  timeline          Timeline  @relation(fields: [timelineId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  timelineId String
+  timeline   Timeline @relation(fields: [timelineId], references: [id], onDelete: Cascade)
 
-  type              String    // lead_created, stage_changed, contacted, note_added, quote_sent, activity_added
-  title             String
-  description       String?
-  metadata          Json?     // { oldStage, newStage, contactMethod, etc. }
+  type        String // lead_created, stage_changed, contacted, note_added, quote_sent, activity_added
+  title       String
+  description String?
+  metadata    Json? // { oldStage, newStage, contactMethod, etc. }
 
-  createdBy         String
-  createdAt         DateTime  @default(now())
+  createdBy String
+  createdAt DateTime @default(now())
 
   @@index([timelineId])
   @@index([type])
 }
 
 model Activity {
-  id                String    @id @default(uuid())
-  orgId             String
-  leadId            String
-  lead              Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  orgId  String
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  type              String    // call, email, note, meeting, task
-  title             String
-  description       String?
+  type        String // call, email, note, meeting, task
+  title       String
+  description String?
 
   // Scheduling
-  scheduledFor      DateTime?
-  duration          Int?      // minutes
+  scheduledFor DateTime?
+  duration     Int? // minutes
 
   // Status
-  status            String    @default("pending") // pending, completed, cancelled
-  completedAt       DateTime?
+  status      String    @default("pending") // pending, completed, cancelled
+  completedAt DateTime?
 
   // Metadata
-  metadata          Json?     // { phone, emailTo, meetingLink, attendees }
+  metadata Json? // { phone, emailTo, meetingLink, attendees }
 
   // Creator
-  createdBy         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
   @@index([type])
@@ -447,64 +514,64 @@ model Activity {
 }
 
 model Quote {
-  id                String    @id @default(uuid())
-  orgId             String
-  leadId            String
-  lead              Lead      @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  id     String @id @default(uuid())
+  orgId  String
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Restrict)
 
-  quoteNumber       String    @unique // QT-2026-001
+  quoteNumber String @unique // QT-2026-001
 
   // Items & Pricing
-  items             Json      // [{ productId, quantity, price, discount }]
+  items Json // [{ productId, quantity, price, discount }]
 
-  totalAmount       Decimal   @db.Decimal(12, 2)
-  discount          Decimal   @db.Decimal(12, 2) @default(0)
-  finalAmount       Decimal   @db.Decimal(12, 2)
+  totalAmount Decimal @db.Decimal(12, 2)
+  discount    Decimal @default(0) @db.Decimal(12, 2)
+  finalAmount Decimal @db.Decimal(12, 2)
 
   // Validity
-  validUntil        DateTime
+  validUntil DateTime
 
   // Status
-  status            String    @default("draft") // draft, sent, accepted, rejected, expired
-  sentAt            DateTime?
-  acceptedAt        DateTime?
+  status     String    @default("draft") // draft, sent, accepted, rejected, expired
+  sentAt     DateTime?
+  acceptedAt DateTime?
 
   // Terms & Notes
-  terms             String?   // Payment terms, delivery, etc.
-  notes             String?
+  terms String? // Payment terms, delivery, etc.
+  notes String?
 
   // Creator
-  createdBy         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
   @@index([status])
 }
 
 model PurchaseRequest {
-  id                String    @id @default(uuid())
-  orgId             String
-  leadId            String
-  lead              Lead      @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  id     String @id @default(uuid())
+  orgId  String
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Restrict)
 
-  prNumber          String    @unique // PR-2026-001
+  prNumber String @unique // PR-2026-001
 
   // Request Details
-  productIds        String[]  // Array of product IDs
+  productIds        String[] // Array of product IDs
   estimatedQuantity Int
-  estimatedAmount   Decimal   @db.Decimal(12, 2)
+  estimatedAmount   Decimal  @db.Decimal(12, 2)
 
   // Status
-  status            String    @default("pending") // pending, sent_to_supplier, received, approved
-  sentToSupplierAt  DateTime?
+  status           String    @default("pending") // pending, sent_to_supplier, received, approved
+  sentToSupplierAt DateTime?
 
-  notes             String?
+  notes String?
 
   // Creator
-  createdBy         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
   @@index([status])
@@ -517,18 +584,18 @@ model PurchaseRequest {
 // Files attached to a lead (spec sheets, POs, drawings). Bytes live in the
 // Supabase Storage "lead-documents" bucket; this row is the metadata index.
 model LeadDocument {
-  id                String    @id @default(uuid())
-  orgId             String
-  leadId            String
-  lead              Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  orgId  String
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  name              String    // original filename shown in the UI
-  storagePath       String    // object key within the bucket
-  mimeType          String?
-  sizeBytes         Int       @default(0)
+  name        String // original filename shown in the UI
+  storagePath String // object key within the bucket
+  mimeType    String?
+  sizeBytes   Int     @default(0)
 
-  uploadedBy        String    // userId
-  createdAt         DateTime  @default(now())
+  uploadedBy String // userId
+  createdAt  DateTime @default(now())
 
   @@index([leadId])
   @@index([orgId])
@@ -538,20 +605,21 @@ model LeadDocument {
 // is created: the first active rule whose source + weekday + productCategory
 // match the new lead wins. A null weekday/productCategory means "any".
 model AssignmentRule {
-  id                String    @id @default(uuid())
-  orgId             String
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  source            String    // e.g. "IndiaMART" (matched against Lead.source)
-  weekday           Int?      // 0=Sunday .. 6=Saturday; null = any day
-  productCategory   String?   // null = any category
-  assignedToId      String    // userId the matching lead is assigned to
+  source          String // e.g. "IndiaMART" (matched against Lead.source)
+  weekday         Int? // 0=Sunday .. 6=Saturday; null = any day
+  productCategory String? // null = any category
+  assignedToId    String // userId the matching lead is assigned to
 
-  isActive          Boolean   @default(true)
-  priority          Int       @default(0) // lower runs first when several match
+  isActive Boolean @default(true)
+  priority Int     @default(0) // lower runs first when several match
 
-  createdBy         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([orgId, isActive])
 }
@@ -561,126 +629,127 @@ model AssignmentRule {
 // ============================================================================
 
 model Product {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Product Info
-  sku               String
-  name              String
-  category          String    // Mild Steel Pipes, Hollow Sections, etc.
+  sku      String
+  name     String
+  category String // Mild Steel Pipes, Hollow Sections, etc.
 
   // Specifications
-  specifications    Json      // { size, grade, thickness, weight, etc. }
+  specifications Json // { size, grade, thickness, weight, etc. }
 
   // Pricing
-  basePrice         Decimal   @db.Decimal(12, 2)
-  currency          String    @default("INR")
+  basePrice Decimal @db.Decimal(12, 2)
+  currency  String  @default("INR")
 
   // Inventory
-  currentStock      Int       @default(0)
-  minStock          Int       @default(10)
-  maxStock          Int       @default(1000)
-  unit              String    // kg, piece, meter, ton
+  currentStock Int    @default(0)
+  minStock     Int    @default(10)
+  maxStock     Int    @default(1000)
+  unit         String // kg, piece, meter, ton
 
   // Default Supplier
   defaultSupplierId String?
 
   // Status
-  active            Boolean   @default(true)
-  discontinued      Boolean   @default(false)
+  active       Boolean @default(true)
+  discontinued Boolean @default(false)
 
   // Media & Docs
-  imageUrl          String?
-  datasheet         String?   // File URL
+  imageUrl  String?
+  datasheet String? // File URL
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  stockMovements    StockMovement[]
-  suppliers         Supplier[]
-  salesOrderItems   SalesOrderItem[]
+  stockMovements     StockMovement[]
+  suppliers          Supplier[]
+  salesOrderItems    SalesOrderItem[]
   purchaseOrderItems PurchaseOrderItem[]
-  inventory         Inventory?
+  inventory          Inventory?
 
+  @@unique([orgId, sku])
   @@index([orgId])
   @@index([active])
   @@index([category])
-  @@unique([orgId, sku])
 }
 
 model Supplier {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Company Info
-  name              String
-  contactPerson     String
-  email             String
-  phone             String
+  name          String
+  contactPerson String
+  email         String
+  phone         String
 
   // Address
-  address           String
-  city              String
-  state             String
-  pincode           String
+  address String
+  city    String
+  state   String
+  pincode String
 
   // Business Details
-  gstNumber         String?
-  bankAccount       Json?     // { accountNumber, ifsc, accountHolder }
-  paymentTerms      String?
+  gstNumber    String?
+  bankAccount  Json? // { accountNumber, ifsc, accountHolder }
+  paymentTerms String?
 
   // Relationship
-  products          Product[]
-  purchaseOrders    PurchaseOrder[]
-  rating            Decimal   @db.Decimal(3, 2) @default(0)
+  products       Product[]
+  purchaseOrders PurchaseOrder[]
+  rating         Decimal         @default(0) @db.Decimal(3, 2)
 
-  active            Boolean   @default(true)
+  active Boolean @default(true)
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([orgId])
   @@index([active])
 }
 
 model Customer {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Company Info
-  name              String
-  contactPerson     String
-  email             String
-  phone             String
+  name          String
+  contactPerson String
+  email         String
+  phone         String
 
   // Address
-  address           String
-  city              String
-  state             String
-  pincode           String
+  address String
+  city    String
+  state   String
+  pincode String
 
   // Business Details
-  gstNumber         String?
-  bankAccount       Json?
-  creditLimit       Decimal   @db.Decimal(12, 2) @default(0)
+  gstNumber   String?
+  bankAccount Json?
+  creditLimit Decimal @default(0) @db.Decimal(12, 2)
 
   // Type
-  type              String    @default("dealer") // dealer, fabricator, contractor, manufacturer
+  type String @default("dealer") // dealer, fabricator, contractor, manufacturer
 
-  active            Boolean   @default(true)
+  active Boolean @default(true)
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  salesOrders       SalesOrder[]
-  invoices          Invoice[]
-  payments          Payment[]
-  outstandings      Outstanding[]
+  salesOrders  SalesOrder[]
+  invoices     Invoice[]
+  payments     Payment[]
+  outstandings Outstanding[]
+  Contact      Contact[]
 
   @@index([orgId])
   @@index([type])
@@ -691,173 +760,173 @@ model Customer {
 // ============================================================================
 
 model SalesOrder {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Order Details
-  soNumber          String    @unique // SO-2026-001
-  customerId        String
-  customer          Customer  @relation(fields: [customerId], references: [id])
+  soNumber   String   @unique // SO-2026-001
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
 
   // Items
-  items             SalesOrderItem[]
+  items SalesOrderItem[]
 
   // Pricing
-  subtotal          Decimal   @db.Decimal(12, 2)
-  discount          Decimal   @db.Decimal(12, 2) @default(0)
-  tax               Decimal   @db.Decimal(12, 2)
-  totalAmount       Decimal   @db.Decimal(12, 2)
+  subtotal    Decimal @db.Decimal(12, 2)
+  discount    Decimal @default(0) @db.Decimal(12, 2)
+  tax         Decimal @db.Decimal(12, 2)
+  totalAmount Decimal @db.Decimal(12, 2)
 
   // Delivery
-  deliveryAddress   String
-  deliveryDate      DateTime
+  deliveryAddress String
+  deliveryDate    DateTime
 
   // Payment
-  paymentTerms      String?
+  paymentTerms String?
 
   // Status
-  status            String    @default("draft") // draft, confirmed, shipped, delivered, cancelled
+  status String @default("draft") // draft, confirmed, shipped, delivered, cancelled
 
   // Timeline
-  confirmedAt       DateTime?
-  shippedAt         DateTime?
-  deliveredAt       DateTime?
+  confirmedAt DateTime?
+  shippedAt   DateTime?
+  deliveredAt DateTime?
 
   // Notes
-  notes             String?
+  notes               String?
   specialInstructions String?
 
   // Assignment
-  assignedToId      String?
-  assignedTo        User?     @relation("assignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedToId String?
+  assignedTo   User?   @relation("assignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
 
   // Tracking
-  createdBy         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  shipments         Shipment[]
-  invoice           Invoice?
+  shipments Shipment[]
+  invoice   Invoice?
 
   @@index([customerId])
   @@index([status])
 }
 
 model SalesOrderItem {
-  id                String    @id @default(uuid())
-  soId              String
-  so                SalesOrder @relation(fields: [soId], references: [id], onDelete: Cascade)
+  id   String     @id @default(uuid())
+  soId String
+  so   SalesOrder @relation(fields: [soId], references: [id], onDelete: Cascade)
 
-  productId         String
-  product           Product   @relation(fields: [productId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
 
-  quantity          Int
-  unitPrice         Decimal   @db.Decimal(12, 2)
-  discount          Decimal   @db.Decimal(12, 2) @default(0)
-  tax               Decimal   @db.Decimal(12, 2)
-  totalPrice        Decimal   @db.Decimal(12, 2)
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(12, 2)
+  discount   Decimal @default(0) @db.Decimal(12, 2)
+  tax        Decimal @db.Decimal(12, 2)
+  totalPrice Decimal @db.Decimal(12, 2)
 
   // Delivery tracking
-  delivered         Int       @default(0)
+  delivered Int @default(0)
 
-  createdAt         DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([soId])
 }
 
 model PurchaseOrder {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Order Details
-  poNumber          String    @unique // PO-2026-001
-  supplierId        String
-  supplier          Supplier  @relation(fields: [supplierId], references: [id])
+  poNumber   String   @unique // PO-2026-001
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
 
   // Items
-  items             PurchaseOrderItem[]
+  items PurchaseOrderItem[]
 
   // Pricing
-  subtotal          Decimal   @db.Decimal(12, 2)
-  discount          Decimal   @db.Decimal(12, 2) @default(0)
-  tax               Decimal   @db.Decimal(12, 2)
-  totalAmount       Decimal   @db.Decimal(12, 2)
+  subtotal    Decimal @db.Decimal(12, 2)
+  discount    Decimal @default(0) @db.Decimal(12, 2)
+  tax         Decimal @db.Decimal(12, 2)
+  totalAmount Decimal @db.Decimal(12, 2)
 
   // Delivery
-  expectedDelivery  DateTime
+  expectedDelivery DateTime
 
   // Payment
-  paymentTerms      String?
+  paymentTerms String?
 
   // Status
-  status            String    @default("draft") // draft, sent, confirmed, received, cancelled
+  status String @default("draft") // draft, sent, confirmed, received, cancelled
 
   // Timeline
-  sentAt            DateTime?
-  confirmedAt       DateTime?
-  receivedAt        DateTime?
+  sentAt      DateTime?
+  confirmedAt DateTime?
+  receivedAt  DateTime?
 
-  notes             String?
+  notes String?
 
   // Tracking
-  createdBy         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  goodsReceipts     GoodsReceipt[]
+  goodsReceipts GoodsReceipt[]
 
   @@index([supplierId])
   @@index([status])
 }
 
 model PurchaseOrderItem {
-  id                String    @id @default(uuid())
-  poId              String
-  po                PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  id   String        @id @default(uuid())
+  poId String
+  po   PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
 
-  productId         String
-  product           Product   @relation(fields: [productId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
 
-  quantity          Int
-  unitPrice         Decimal   @db.Decimal(12, 2)
-  discount          Decimal   @db.Decimal(12, 2) @default(0)
-  tax               Decimal   @db.Decimal(12, 2)
-  totalPrice        Decimal   @db.Decimal(12, 2)
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(12, 2)
+  discount   Decimal @default(0) @db.Decimal(12, 2)
+  tax        Decimal @db.Decimal(12, 2)
+  totalPrice Decimal @db.Decimal(12, 2)
 
   // Receiving
-  received          Int       @default(0)
+  received Int @default(0)
 
-  createdAt         DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([poId])
 }
 
 model GoodsReceipt {
-  id                String    @id @default(uuid())
-  orgId             String
-  poId              String
-  po                PurchaseOrder @relation(fields: [poId], references: [id])
+  id    String        @id @default(uuid())
+  orgId String
+  poId  String
+  po    PurchaseOrder @relation(fields: [poId], references: [id])
 
-  grNumber          String    @unique // GR-2026-001
+  grNumber String @unique // GR-2026-001
 
   // Items Received
-  items             Json      // { productId, quantityReceived, qualityNotes }
+  items Json // { productId, quantityReceived, qualityNotes }
 
   // Location
   warehouseLocation String?
 
   // Inspection
-  inspectionDate    DateTime
-  inspectionNotes   String?
-  qualityStatus     String    // Accepted, Rejected, Partial
+  inspectionDate  DateTime
+  inspectionNotes String?
+  qualityStatus   String // Accepted, Rejected, Partial
 
   // Timeline
-  receivedAt        DateTime  @default(now())
-  createdBy         String
+  receivedAt DateTime @default(now())
+  createdBy  String
 
   @@index([poId])
 }
@@ -867,28 +936,28 @@ model GoodsReceipt {
 // ============================================================================
 
 model Inventory {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  productId         String    @unique
-  product           Product   @relation(fields: [productId], references: [id])
+  productId String  @unique
+  product   Product @relation(fields: [productId], references: [id])
 
   // Immutable ledger of every mutation to this inventory row (source of truth)
-  stockMovements    StockMovement[]
+  stockMovements StockMovement[]
 
   // Stock Levels
-  currentStock      Int       @default(0)
-  reserved          Int       @default(0) // For pending sales orders
+  currentStock Int @default(0)
+  reserved     Int @default(0) // For pending sales orders
 
   // Locations
-  warehouseLocations Json?    // { location, quantity }
+  warehouseLocations Json? // { location, quantity }
 
   // Reorder
-  lastRestockDate   DateTime?
-  nextRestockDate   DateTime?
+  lastRestockDate DateTime?
+  nextRestockDate DateTime?
 
-  updatedAt         DateTime  @updatedAt
+  updatedAt DateTime @updatedAt
 
   @@index([orgId])
 }
@@ -899,31 +968,31 @@ model Inventory {
 // invariant (stock-ledger.service only ever CREATEs) — add a DB trigger only if
 // direct SQL writes become a real threat.
 model StockMovement {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  productId         String
-  product           Product   @relation(fields: [productId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
 
   // Links the movement to the Inventory row it mutated (mandate #4)
-  inventoryId       String
-  inventory         Inventory @relation(fields: [inventoryId], references: [id])
+  inventoryId String
+  inventory   Inventory @relation(fields: [inventoryId], references: [id])
 
-  direction         String    // "IN" | "OUT"
-  reason            String    // purchase_receipt | sale | adjustment | return | transfer
-  quantity          Int       // always positive; sign comes from `direction`
-  balanceAfter      Int       // Inventory.currentStock immediately AFTER this movement
-  unitCost          Decimal?  @db.Decimal(12, 2) // optional, for valuation / Tally
+  direction    String // "IN" | "OUT"
+  reason       String // purchase_receipt | sale | adjustment | return | transfer
+  quantity     Int // always positive; sign comes from `direction`
+  balanceAfter Int // Inventory.currentStock immediately AFTER this movement
+  unitCost     Decimal? @db.Decimal(12, 2) // optional, for valuation / Tally
 
   // Reference
-  reference         String    // SO-001, PO-001, GR-001
-  referenceType     String    // sales_order | purchase_order | goods_receipt | manual
+  reference     String // SO-001, PO-001, GR-001
+  referenceType String // sales_order | purchase_order | goods_receipt | manual
 
-  notes             String?
+  notes String?
 
-  createdBy         String
-  createdAt         DateTime  @default(now())
+  createdBy String
+  createdAt DateTime @default(now())
 
   @@index([orgId, productId, createdAt])
   @@index([direction])
@@ -934,30 +1003,30 @@ model StockMovement {
 // multiple models, so there is no hard FK. The @@unique makes enqueue idempotent
 // (re-enqueue upserts an existing row rather than duplicating it).
 model TallySyncQueue {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  entityType        String    // "invoice" | "sales_order" | "ledger" | "payment"
-  entityId          String    // id of the source row
+  entityType String // "invoice" | "sales_order" | "ledger" | "payment"
+  entityId   String // id of the source row
 
-  direction         String    @default("push") // push (→Tally) | pull
-  format            String    @default("xml")   // xml | json
-  payload           Json?                        // rendered Tally envelope (cached on build)
+  direction String @default("push") // push (→Tally) | pull
+  format    String @default("xml") // xml | json
+  payload   Json? // rendered Tally envelope (cached on build)
 
-  status            String    @default("pending") // pending | processing | synced | failed
-  attempts          Int       @default(0)
-  maxAttempts       Int       @default(5)
-  lastError         String?
-  lastAttemptAt     DateTime?
-  syncedAt          DateTime?
+  status        String    @default("pending") // pending | processing | synced | failed
+  attempts      Int       @default(0)
+  maxAttempts   Int       @default(5)
+  lastError     String?
+  lastAttemptAt DateTime?
+  syncedAt      DateTime?
 
-  tallyGuid         String?   // master GUID / voucher id returned on success
-  tallyMsgId        String?   // idempotency token we send to Tally
+  tallyGuid  String? // master GUID / voucher id returned on success
+  tallyMsgId String? // idempotency token we send to Tally
 
-  createdBy         String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([orgId, entityType, entityId, direction])
   @@index([orgId, status])
@@ -965,34 +1034,34 @@ model TallySyncQueue {
 }
 
 model Shipment {
-  id                String    @id @default(uuid())
-  orgId             String
-  soId              String
-  so                SalesOrder @relation(fields: [soId], references: [id])
+  id    String     @id @default(uuid())
+  orgId String
+  soId  String
+  so    SalesOrder @relation(fields: [soId], references: [id])
 
-  shipmentNumber    String    @unique // SHIP-2026-001
+  shipmentNumber String @unique // SHIP-2026-001
 
   // Items
-  items             Json      // { soItemId, quantityShipped }
+  items Json // { soItemId, quantityShipped }
 
   // Logistics
-  shippingProvider  String?   // Fedex, Delhivery, etc.
-  trackingNumber    String?
+  shippingProvider String? // Fedex, Delhivery, etc.
+  trackingNumber   String?
 
   // Dates
-  shippedAt         DateTime
-  expectedDelivery  DateTime
+  shippedAt        DateTime
+  expectedDelivery DateTime
 
   // Status
-  status            String    @default("in_transit") // in_transit, delivered, failed
-  deliveredAt       DateTime?
+  status      String    @default("in_transit") // in_transit, delivered, failed
+  deliveredAt DateTime?
 
   // Address
-  deliveryAddress   String
+  deliveryAddress String
 
-  createdBy         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([soId])
   @@index([status])
@@ -1003,47 +1072,47 @@ model Shipment {
 // ============================================================================
 
 model Invoice {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Invoice Details
-  invoiceNumber     String    @unique // INV-2026-001
-  customerId        String
-  customer          Customer  @relation(fields: [customerId], references: [id])
+  invoiceNumber String   @unique // INV-2026-001
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id])
 
-  soId              String    @unique
-  so                SalesOrder @relation(fields: [soId], references: [id])
+  soId String     @unique
+  so   SalesOrder @relation(fields: [soId], references: [id])
 
   // Dates
-  invoiceDate       DateTime  @default(now())
-  dueDate           DateTime
+  invoiceDate DateTime @default(now())
+  dueDate     DateTime
 
   // Amount
-  subtotal          Decimal   @db.Decimal(12, 2)
-  discount          Decimal   @db.Decimal(12, 2)
-  tax               Decimal   @db.Decimal(12, 2)
-  totalAmount       Decimal   @db.Decimal(12, 2)
+  subtotal    Decimal @db.Decimal(12, 2)
+  discount    Decimal @db.Decimal(12, 2)
+  tax         Decimal @db.Decimal(12, 2)
+  totalAmount Decimal @db.Decimal(12, 2)
 
   // Payment
-  paidAmount        Decimal   @db.Decimal(12, 2) @default(0)
-  outstandingAmount Decimal   @db.Decimal(12, 2)
+  paidAmount        Decimal @default(0) @db.Decimal(12, 2)
+  outstandingAmount Decimal @db.Decimal(12, 2)
 
   // Status
-  status            String    @default("issued") // issued, partial_paid, fully_paid, overdue, written_off
+  status String @default("issued") // issued, partial_paid, fully_paid, overdue, written_off
 
-  notes             String?
-  terms             String?
+  notes String?
+  terms String?
 
   // Timeline
-  paidAt            DateTime?
-  createdBy         String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  paidAt    DateTime?
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   // Relations
-  payments          Payment[]
-  outstandings      Outstanding[]
+  payments     Payment[]
+  outstandings Outstanding[]
 
   @@index([customerId])
   @@index([status])
@@ -1051,60 +1120,60 @@ model Invoice {
 }
 
 model Payment {
-  id                String    @id @default(uuid())
-  orgId             String
-  invoiceId         String
-  invoice           Invoice   @relation(fields: [invoiceId], references: [id])
+  id        String  @id @default(uuid())
+  orgId     String
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
 
-  customerId        String
-  customer          Customer  @relation(fields: [customerId], references: [id])
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
 
   // Payment Details
-  amount            Decimal   @db.Decimal(12, 2)
-  paymentMethod     String    // upi, bank_transfer, cheque, cash
-  transactionId     String?
-  referenceNumber   String?
+  amount          Decimal @db.Decimal(12, 2)
+  paymentMethod   String // upi, bank_transfer, cheque, cash
+  transactionId   String?
+  referenceNumber String?
 
   // Status
-  status            String    @default("completed") // completed, pending, failed
+  status String @default("completed") // completed, pending, failed
 
   // Dates
-  paymentDate       DateTime  @default(now())
-  processedAt       DateTime?
+  paymentDate DateTime  @default(now())
+  processedAt DateTime?
 
-  notes             String?
+  notes String?
 
-  createdBy         String
-  createdAt         DateTime  @default(now())
+  createdBy String
+  createdAt DateTime @default(now())
 
   @@index([invoiceId])
   @@index([customerId])
 }
 
 model Outstanding {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  customerId        String
-  customer          Customer  @relation(fields: [customerId], references: [id])
-  invoiceId         String
-  invoice           Invoice   @relation(fields: [invoiceId], references: [id])
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  invoiceId  String
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id])
 
-  amount            Decimal   @db.Decimal(12, 2)
-  dueDate           DateTime
+  amount  Decimal  @db.Decimal(12, 2)
+  dueDate DateTime
 
   // Status
-  status            String    @default("open") // open, partially_paid, overdue, written_off
-  daysOverdue       Int       @default(0) // Calculated
+  status      String @default("open") // open, partially_paid, overdue, written_off
+  daysOverdue Int    @default(0) // Calculated
 
   // Follow-up
-  lastReminderDate  DateTime?
-  reminderCount     Int       @default(0)
+  lastReminderDate DateTime?
+  reminderCount    Int       @default(0)
 
-  notes             String?
+  notes String?
 
-  updatedAt         DateTime  @updatedAt
+  updatedAt DateTime @updatedAt
 
   @@index([customerId])
   @@index([status])
