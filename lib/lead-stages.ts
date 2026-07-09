@@ -116,6 +116,129 @@ export const ALL_STAGES = [
   'Disqualified',
 ] as const
 
+// ============================================================================
+// WORKFLOW STAGE CONFIG (Settings.workflowStages)
+// ============================================================================
+// v1 shape (written by signup/settings): { stages: string[] }
+// v2 shape (written by the admin workspace stage editor):
+//   { version: 2, stages: WorkflowStage[] }
+// normalizeWorkflowStages() accepts either (or null/garbage) and returns the
+// rich v2 array, so readers never care which version is stored.
+
+export type StageBehavior = 'standard' | 'requires_reason' | 'requires_quote_details'
+export type StageModal = null | 'reason' | 'quote_details'
+
+export interface WorkflowStage {
+  id: string
+  name: string
+  color: string
+  order: number
+  isTerminal: boolean
+  behavior: StageBehavior
+  modal: StageModal
+}
+
+// Fixed palette for v1 stages / newly added stages without an explicit color.
+export const STAGE_COLOR_PALETTE = [
+  '#3b82f6', // blue
+  '#8b5cf6', // violet
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#22c55e', // green
+  '#ef4444', // red
+  '#6b7280', // gray
+] as const
+
+function slugifyStageId(name: string): string {
+  return name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
+function inferBehavior(name: string): { behavior: StageBehavior; modal: StageModal } {
+  if (name === 'Deal Lost' || name === 'Disqualified') {
+    return { behavior: 'requires_reason', modal: 'reason' }
+  }
+  if (name === 'Quote Sent') {
+    return { behavior: 'requires_quote_details', modal: 'quote_details' }
+  }
+  return { behavior: 'standard', modal: null }
+}
+
+/**
+ * Normalize any stored Settings.workflowStages value (v1 string array, v2 rich
+ * array, null, or garbage) into a rich WorkflowStage[] ordered by `order`.
+ * Falls back to ALL_STAGES defaults when nothing usable is stored.
+ */
+export function normalizeWorkflowStages(json: unknown): WorkflowStage[] {
+  const raw =
+    json && typeof json === 'object' && Array.isArray((json as { stages?: unknown }).stages)
+      ? ((json as { stages: unknown[] }).stages)
+      : null
+
+  const source: unknown[] = raw && raw.length > 0 ? raw : [...ALL_STAGES]
+
+  const seen = new Set<string>()
+  const stages: WorkflowStage[] = []
+
+  for (const entry of source) {
+    // v1 entry: plain stage name
+    if (typeof entry === 'string') {
+      const name = entry.trim()
+      if (!name) continue
+      const id = slugifyStageId(name)
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      stages.push({
+        id,
+        name,
+        color: STAGE_COLOR_PALETTE[stages.length % STAGE_COLOR_PALETTE.length],
+        order: stages.length,
+        isTerminal: isTerminalStage(name),
+        ...inferBehavior(name),
+      })
+      continue
+    }
+
+    // v2 entry: rich object
+    if (entry && typeof entry === 'object') {
+      const obj = entry as Partial<WorkflowStage> & { name?: unknown }
+      const name = typeof obj.name === 'string' ? obj.name.trim() : ''
+      if (!name) continue
+      const id =
+        typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : slugifyStageId(name)
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      const inferred = inferBehavior(name)
+      stages.push({
+        id,
+        name,
+        color:
+          typeof obj.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(obj.color)
+            ? obj.color
+            : STAGE_COLOR_PALETTE[stages.length % STAGE_COLOR_PALETTE.length],
+        order: typeof obj.order === 'number' ? obj.order : stages.length,
+        isTerminal: typeof obj.isTerminal === 'boolean' ? obj.isTerminal : isTerminalStage(name),
+        behavior:
+          obj.behavior === 'standard' ||
+          obj.behavior === 'requires_reason' ||
+          obj.behavior === 'requires_quote_details'
+            ? obj.behavior
+            : inferred.behavior,
+        modal:
+          obj.modal === null || obj.modal === 'reason' || obj.modal === 'quote_details'
+            ? obj.modal
+            : inferred.modal,
+      })
+    }
+  }
+
+  // Guarantee non-empty output even for fully-garbage input
+  if (stages.length === 0) {
+    return normalizeWorkflowStages(null)
+  }
+
+  return stages.sort((a, b) => a.order - b.order).map((s, i) => ({ ...s, order: i }))
+}
+
 // Stage movement is unrestricted: anyone with access to a lead can move it
 // to any other stage. Access itself is role-scoped via canAccessLead() /
 // buildOwnershipFilter() — Purchase can only reach leads assigned to them

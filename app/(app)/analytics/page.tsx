@@ -85,13 +85,10 @@ function AnalyticsContent() {
 
   if (loading) return <p className="text-sm text-muted-foreground">Loading analytics…</p>
   if (error) return <p className="text-sm text-destructive">{error}</p>
-  if (!data) return null
+  if (!data) return <p className="text-sm text-muted-foreground">No analytics data available yet.</p>
 
   const { kpis, stageDistribution, salespersonStats, activityVolume } = data
-
   const maxStageCount = Math.max(...Object.values(stageDistribution), 1)
-
-  // Compute max daily total for bar chart scaling
   const maxDayTotal = Math.max(
     ...activityVolume.map((d) =>
       ACTIVITY_TYPES.reduce((sum, t) => sum + (d[t] ?? 0), 0)
@@ -105,7 +102,6 @@ function AnalyticsContent() {
 
       <QuickActionsCard showTeamPerformanceLink={salespersonStats.length > 1} />
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Total Leads</CardTitle></CardHeader>
@@ -130,7 +126,6 @@ function AnalyticsContent() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Stage Distribution */}
         <Card>
           <CardHeader><CardTitle>Leads by Stage</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-2">
@@ -153,7 +148,6 @@ function AnalyticsContent() {
           </CardContent>
         </Card>
 
-        {/* Activity Volume (last 30 days) */}
         <Card>
           <CardHeader>
             <CardTitle>Activity Volume (last 30 days)</CardTitle>
@@ -195,7 +189,6 @@ function AnalyticsContent() {
 
       <RecentActivityCard />
 
-      {/* Per-salesperson table */}
       <Card id="team-performance">
         <CardHeader>
           <CardTitle>{data.scope === 'team' ? 'Team Performance' : 'My Performance'}</CardTitle>

@@ -9,20 +9,11 @@ import {
 } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
-import { z } from 'zod'
+import { UpdateUserSchema } from '@/lib/validation'
 
 interface Params {
   params: { id: string }
 }
-
-const UpdateUserSchema = z.object({
-  role: z.string().min(1, 'Role is required'),
-  department: z.string().nullable().optional(),
-  designation: z.string().nullable().optional(),
-  territory: z.string().nullable().optional(),
-  branch: z.string().nullable().optional(),
-  status: z.enum(['active', 'inactive', 'suspended']).optional(),
-})
 
 // GET /api/v1/users/:id - Get a single user
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {

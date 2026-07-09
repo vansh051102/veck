@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { ChevronDown, LogOut, Menu, User } from 'lucide-react'
+import { Building2, ChevronDown, LogOut, Menu, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { supabaseBrowser } from '@/lib/supabase-browser'
@@ -53,6 +53,17 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                     My Profile
                   </Link>
                 </DropdownMenu.Item>
+                {me.canAccessAdminWorkspace && (
+                  <DropdownMenu.Item asChild>
+                    <Link
+                      href="/admin"
+                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-muted"
+                    >
+                      <Building2 className="h-4 w-4" />
+                      Admin Workspace
+                    </Link>
+                  </DropdownMenu.Item>
+                )}
                 <DropdownMenu.Item
                   onSelect={handleSignOut}
                   className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive outline-none hover:bg-muted"

@@ -18,6 +18,7 @@ export const GET = withErrorHandler(async (req) => {
           name: true,
           slug: true,
           subscriptionPlan: true,
+          moduleAccess: true,
         },
       },
     },
@@ -29,6 +30,20 @@ export const GET = withErrorHandler(async (req) => {
 
   // Fetch permissions from the Role table
   const permissions = await getUserPermissions(ctx.userId)
+
+  // Admin workspace entry: super-admins always; otherwise only users holding
+  // an admin membership in a company OTHER than their home org (home-org
+  // admins manage their own company via /settings).
+  const foreignAdminCount = user.isSuperAdmin
+    ? 0
+    : await prisma.membership.count({
+        where: {
+          userId: ctx.userId,
+          role: 'admin',
+          status: 'active',
+          NOT: { orgId: user.orgId },
+        },
+      })
 
   return successResponse({
     user: {
@@ -42,6 +57,8 @@ export const GET = withErrorHandler(async (req) => {
       lastLogin: user.lastLogin,
       avatarUrl: user.avatarUrl,
       defaultDashboard: user.defaultDashboard,
+      isSuperAdmin: user.isSuperAdmin,
+      canAccessAdminWorkspace: user.isSuperAdmin || foreignAdminCount > 0,
       permissions,
     },
     org: user.org,

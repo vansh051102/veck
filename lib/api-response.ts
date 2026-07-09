@@ -179,10 +179,4 @@ export function getPaginationParams(
   return { page, limit, skip }
 }
 
-export async function getTotal(query: Promise<any>) {
-  try {
-    return await query
-  } catch {
-    return 0
-  }
-}
+

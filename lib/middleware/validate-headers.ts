@@ -34,6 +34,7 @@ export interface RequestContext {
     fullName: string
     role: string
     status: string
+    isSuperAdmin: boolean
     department: string | null
     designation: string | null
   }
@@ -80,6 +81,7 @@ export async function verifyUserContext(
       fullName: true,
       role: true,
       status: true,
+      isSuperAdmin: true,
       orgId: true,
       department: true,
       designation: true,

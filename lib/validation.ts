@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PERMISSIONS } from './permissions'
 
 // ============================================================================
 // AUTH VALIDATION
@@ -291,6 +292,52 @@ export const UpdateAssignmentRuleSchema = CreateAssignmentRuleSchema.partial()
 
 export type CreateAssignmentRuleInput = z.infer<typeof CreateAssignmentRuleSchema>
 export type UpdateAssignmentRuleInput = z.infer<typeof UpdateAssignmentRuleSchema>
+
+// ============================================================================
+// USER & ROLE MANAGEMENT VALIDATION
+// ============================================================================
+// Shared by the org-scoped routes (/users, /roles) and the admin workspace
+// routes (/admin/companies/[orgId]/...). Route files may only export handlers,
+// so these live here.
+
+export const CreateUserSchema = z.object({
+  email: z.string().email('Invalid email'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  fullName: z.string().min(2, 'Full name is required'),
+  role: z.string().min(1, 'Role is required'),
+  department: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  territory: z.string().nullable().optional(),
+  branch: z.string().nullable().optional(),
+})
+
+export const UpdateUserSchema = z.object({
+  role: z.string().min(1, 'Role is required'),
+  department: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  territory: z.string().nullable().optional(),
+  branch: z.string().nullable().optional(),
+  status: z.enum(['active', 'inactive', 'suspended']).optional(),
+})
+
+// Only real permission strings are accepted. Wildcards ('*') are implicitly
+// rejected because they are not members of PERMISSIONS — admin '*' is granted
+// by role name, never stored on a custom role.
+const ALL_PERMISSIONS = Object.values(PERMISSIONS) as string[]
+
+export const UpdateRoleSchema = z.object({
+  permissions: z
+    .array(z.string())
+    .min(1, 'At least one permission is required')
+    .refine((perms) => perms.every((p) => ALL_PERMISSIONS.includes(p)), {
+      message: 'Contains an unknown or disallowed permission',
+    }),
+  description: z.string().nullable().optional(),
+})
+
+export type CreateUserInput = z.infer<typeof CreateUserSchema>
+export type UpdateUserInput = z.infer<typeof UpdateUserSchema>
+export type UpdateRoleInput = z.infer<typeof UpdateRoleSchema>
 
 // ============================================================================
 // PAGINATION VALIDATION

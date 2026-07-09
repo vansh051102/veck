@@ -11,7 +11,7 @@
 // New code should import from '@/lib/providers/auth-provider' directly.
 
 export { AuthProvider, useAuth } from './providers/auth-provider'
-export { useCurrentUser, useHasPermission, useHasAnyPermission } from './providers/auth-provider'
+export { useCurrentUser, useCurrentOrg, useHasPermission, useHasAnyPermission } from './providers/auth-provider'
 
 // Type re-exports
 export interface CurrentUser {
@@ -21,12 +21,22 @@ export interface CurrentUser {
   role: string
   department: string | null
   designation: string | null
+  isSuperAdmin: boolean
+  canAccessAdminWorkspace: boolean
   permissions: string[]
+}
+
+export interface CurrentOrg {
+  id: string
+  name: string
+  slug: string
+  subscriptionPlan: string
+  moduleAccess: Record<string, boolean> | null
 }
 
 export interface MeResponse {
   user: CurrentUser
-  org: { id: string; name: string }
+  org: CurrentOrg
 }
 
 /**

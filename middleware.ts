@@ -24,9 +24,6 @@ const PUBLIC_ROUTES = [
   '/api/v1/cron',
 ]
 
-// Admin-only routes
-const ADMIN_ROUTES = ['/admin']
-
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
@@ -77,12 +74,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/auth/inactive', req.url))
   }
 
-  // Check admin access
-  if (ADMIN_ROUTES.some((route) => pathname.startsWith(route))) {
-    if (sessionData.role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', req.url))
-    }
-  }
+  // NOTE: /admin (admin workspace) is intentionally not role-gated here — a
+  // home-org "member" can be a workspace admin of another org via Membership.
+  // Authorization happens per-request in /api/v1/admin/* route handlers.
 
   // Attach user info to the *request* headers so downstream route handlers
   // can read them. Setting headers on `res` only affects the response sent

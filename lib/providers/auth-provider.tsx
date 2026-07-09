@@ -3,10 +3,11 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { api } from '@/lib/api-client'
-import { CurrentUser, MeResponse } from '@/lib/use-current-user'
+import { CurrentUser, CurrentOrg, MeResponse } from '@/lib/use-current-user'
 
 interface AuthContextValue {
   user: CurrentUser | null
+  org: CurrentOrg | null
   isLoading: boolean
   error: string | null
   refetch: () => Promise<void>
@@ -26,6 +27,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null)
+  const [org, setOrg] = useState<CurrentOrg | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,8 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.get<MeResponse>('/auth/me')
       setUser(res.data?.user ?? null)
+      setOrg(res.data?.org ?? null)
     } catch (err) {
       setUser(null)
+      setOrg(null)
       setError(err instanceof Error ? err.message : 'Failed to load user')
     } finally {
       setIsLoading(false)
@@ -45,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const invalidate = useCallback(() => {
     setUser(null)
+    setOrg(null)
   }, [])
 
   useEffect(() => {
@@ -64,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchUser])
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, error, refetch: fetchUser, invalidate }}>
+    <AuthContext.Provider value={{ user, org, isLoading, error, refetch: fetchUser, invalidate }}>
       {children}
     </AuthContext.Provider>
   )
@@ -89,6 +94,15 @@ export function useAuth(): AuthContextValue {
 export function useCurrentUser(): CurrentUser | null {
   const { user } = useAuth()
   return user
+}
+
+/**
+ * Hook to get the current user's home organization (incl. moduleAccess).
+ * Returns null if not authenticated or still loading.
+ */
+export function useCurrentOrg(): CurrentOrg | null {
+  const { org } = useAuth()
+  return org
 }
 
 /**
