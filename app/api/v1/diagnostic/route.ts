@@ -33,5 +33,25 @@ export const GET = async () => {
     checks.prisma = `ERROR: ${e.message?.substring(0, 200)}`
   }
 
+  try {
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: `diag-${Date.now()}@test.com`,
+      password: 'password123',
+    })
+    if (error) {
+      checks.adminCreateUser = `SUPABASE_ERROR: ${error.message}`
+    } else if (data?.user) {
+      checks.adminCreateUser = `OK (user: ${data.user.id})`
+    } else {
+      checks.adminCreateUser = 'UNKNOWN: no user and no error'
+    }
+  } catch (e: any) {
+    checks.adminCreateUser = `THROW: ${e.message?.substring(0, 200)}`
+  }
+
   return NextResponse.json({ env: vars, checks })
 }
