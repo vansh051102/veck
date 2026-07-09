@@ -59,11 +59,13 @@ export const GET = async () => {
     // OK — column is added, data is backfilled. Schema mismatch is harmless
     // for the nullable case; Prisma writes the field regardless.
     checks.timelineBackfill = 'OK'
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+    // IF NOT EXISTS does NOT work with FOREIGN KEY constraints (PG limitation).
+    // Use DO blocks with exception handling instead.
+    await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TABLE "Timeline" ADD CONSTRAINT "Timeline_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Timeline_orgId_idx" ON "Timeline"("orgId")`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "Timeline" ADD CONSTRAINT IF NOT EXISTS "Timeline_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE SET NULL ON UPDATE CASCADE`)
+    await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TABLE "Timeline" ADD CONSTRAINT "Timeline_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE SET NULL ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Timeline_contactId_idx" ON "Timeline"("contactId")`)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "AssignmentRule" ADD CONSTRAINT IF NOT EXISTS "AssignmentRule_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE`)
+    await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TABLE "AssignmentRule" ADD CONSTRAINT "AssignmentRule_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
     await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "RateLimit" ("id" TEXT NOT NULL, "orgId" TEXT NOT NULL, "endpoint" TEXT NOT NULL, "windowId" BIGINT NOT NULL, "count" INTEGER NOT NULL DEFAULT 0, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "RateLimit_pkey" PRIMARY KEY ("id"))`)
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_windowId_key" ON "RateLimit"("orgId", "endpoint", "windowId")`)
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "RateLimit_orgId_endpoint_idx" ON "RateLimit"("orgId", "endpoint")`)

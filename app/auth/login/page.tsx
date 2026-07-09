@@ -53,12 +53,15 @@ function LoginPageContent() {
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
         if (res.ok) {
-          const { user } = await res.json()
-          const defaultPath = user.defaultDashboard || dashboardRouteForRole(user.role)
-          setLoading(false)
-          router.push(defaultPath)
-          router.refresh()
-          return
+          const body = await res.json()
+          const user = body?.data?.user ?? body?.user
+          if (user) {
+            const defaultPath = user.defaultDashboard || dashboardRouteForRole(user.role)
+            setLoading(false)
+            router.push(defaultPath)
+            router.refresh()
+            return
+          }
         }
       }
     } catch {

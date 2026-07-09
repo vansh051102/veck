@@ -136,6 +136,7 @@ export async function signUp(
     const { data: { user }, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
+      email_confirm: true, // Auto-confirm so they can log in immediately
     })
 
     if (authError) throw authError
