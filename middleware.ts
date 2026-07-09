@@ -22,6 +22,7 @@ const PUBLIC_ROUTES = [
   // Scheduler endpoints - server-to-server, authenticated via CRON_SECRET
   // inside the route handler itself.
   '/api/v1/cron',
+  '/api/v1/diagnostic',
 ]
 
 export async function middleware(req: NextRequest) {
