@@ -1,7 +1,7 @@
 {
   "name": "veck",
   "version": "0.1.0",
-  "description": "veck — workspace CRM for trading teams (veck.in)",
+  "description": "veck - workspace CRM for trading teams (veck.in)",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
+    "postinstall": "prisma generate",
     "db:push": "bash -c 'set -a && source .env.local && set +a && exec prisma db push \"$@\"' --",
     "db:migrate": "bash -c 'set -a && source .env.local && set +a && exec prisma migrate dev \"$@\"' --",
     "db:studio": "bash -c 'set -a && source .env.local && set +a && exec prisma studio \"$@\"' --",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.0",
+    "@prisma/client": "^5.4.0",
     "@radix-ui/react-dialog": "^1.1.0",
     "@radix-ui/react-dropdown-menu": "^2.0.0",
     "@radix-ui/react-select": "^2.0.0",
@@ -44,7 +46,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",
-    "@prisma/client": "^5.4.0",
     "@testing-library/jest-dom": "^6.1.0",
     "@testing-library/react": "^14.0.0",
     "@types/jest": "^29.5.0",
