@@ -2,7 +2,8 @@
 
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "darwin-arm64", "darwin", "debian-openssl-3.0.x"]
+  // rhel-openssl-* covers Vercel's Amazon Linux Lambda runtime (AL2 = 1.0.x, AL2023 = 3.0.x).
+  binaryTargets = ["native", "darwin-arm64", "darwin", "debian-openssl-3.0.x", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -31,6 +32,7 @@ model Organization {
   address            String?
   country            String?  @default("India")
   currency           String?  @default("INR")
+  moduleAccess       Json?    // per-module on/off toggles (admin_workspace migration)
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -60,6 +62,7 @@ model User {
   // sales_executive, purchase, sales_purchase (or custom Role.name)
   role             String    @default("sales_executive")
   status           String    @default("active") // active, inactive, suspended
+  isSuperAdmin     Boolean   @default(false) // platform super-admin (admin_workspace migration)
 
   department       String?
   designation      String?
@@ -259,6 +262,9 @@ model Lead {
   notes             String?
   customFields      Json?
   tags              String[]  @default([])
+
+  qualifiedAt       DateTime? // set when lead enters Qualified stage (0_init column)
+  quoteSentAt       DateTime? // set when lead enters Quote Sent stage (0_init column)
 
   slaCreatedAt      DateTime  @default(now())
   slaDeadline       DateTime
@@ -483,4 +489,37 @@ model MessageTemplate {
 
   @@index([orgId])
   @@index([stageKey])
+}
+
+// ============================================================================
+// WORKSPACE ADMIN & INFRA
+// Scalar-only models (no relation fields) — kept in sync with migrations
+// 20260710000000_admin_workspace and 20260710000001_vercel_schema_fixes.
+// The code never navigates relations off these, so FK columns stay plain.
+// ============================================================================
+
+model Membership {
+  id        String   @id @default(uuid())
+  userId    String
+  orgId     String
+  role      String   @default("member")
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+model RateLimit {
+  id        String   @id @default(uuid())
+  orgId     String
+  endpoint  String
+  windowId  BigInt
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, endpoint, windowId])
+  @@index([orgId, endpoint])
+  @@index([updatedAt])
 }

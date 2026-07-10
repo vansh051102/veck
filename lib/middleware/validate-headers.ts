@@ -38,6 +38,7 @@ export interface RequestContext {
     status: string
     department: string | null
     designation: string | null
+    isSuperAdmin: boolean
   }
 }
 
@@ -76,6 +77,7 @@ async function loadUserContext(userId: string, expectedOrgId?: string | null): P
         orgId: true,
         department: true,
         designation: true,
+        isSuperAdmin: true,
       },
     })
 
