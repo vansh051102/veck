@@ -36,17 +36,19 @@ function formatDocNumber(prefix: string, year: number, seq: number): string {
 
 export async function nextQuoteNumber(
   orgId: string,
-  year = new Date().getFullYear()
+  year = new Date().getFullYear(),
+  client: SeqClient = prisma
 ): Promise<string> {
-  const seq = await nextSequenceValue(prisma, orgId, `QT-${year}`)
+  const seq = await nextSequenceValue(client, orgId, `QT-${year}`)
   return formatDocNumber('QT', year, seq)
 }
 
 export async function nextPurchaseRequestNumber(
   orgId: string,
-  year = new Date().getFullYear()
+  year = new Date().getFullYear(),
+  client: SeqClient = prisma
 ): Promise<string> {
-  const seq = await nextSequenceValue(prisma, orgId, `PR-${year}`)
+  const seq = await nextSequenceValue(client, orgId, `PR-${year}`)
   return formatDocNumber('PR', year, seq)
 }
 

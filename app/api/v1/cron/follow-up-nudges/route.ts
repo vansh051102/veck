@@ -47,7 +47,7 @@ export const GET = withErrorHandler(async (req: Request) => {
       })
       const timeline = await tx.timeline.upsert({
         where: { leadId: task.lead.id },
-        create: { orgId: task.lead.orgId, leadId: task.lead.id },
+        create: { leadId: task.lead.id },
         update: {},
       })
       await tx.timelineEvent.create({

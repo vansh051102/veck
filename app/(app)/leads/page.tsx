@@ -15,6 +15,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { api, ApiError } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { LeadsTable, type LeadRow, type OrgUser, type SortBy, type SortDir } from '@/components/leads-table'
+import { LeadsLoadingState } from '@/components/leads-loading'
 import { LeadsKanban } from '@/components/leads-kanban'
 import { LeadsImportModal } from '@/components/leads-import-modal'
 import { AssignmentRulesModal } from '@/components/assignment-rules-modal'
@@ -31,7 +32,6 @@ import { cn } from '@/lib/utils'
 import {
   fetchLeads,
   getCachedLeads,
-  prefetchLeadTabs,
   type LeadListQuery,
 } from '@/lib/leads-cache'
 import { useLeadsLive } from '@/lib/use-leads-live'
@@ -255,42 +255,8 @@ export default function LeadsPage() {
     return params
   }
 
-  // Prefetch every stage tab as soon as filters settle / after live updates.
-  useEffect(() => {
-    if (!initialized) return
-    const base = {
-      priority,
-      days,
-      fromDate,
-      toDate,
-      search,
-      pageSize,
-      sortBy,
-      sortDir,
-      view,
-    }
-    const force = liveEpoch > appliedLiveEpoch.current
-    const t = setTimeout(() => {
-      void prefetchLeadTabs(leadTabs, base, { force }).then(() => {
-        if (force) appliedLiveEpoch.current = liveEpoch
-      })
-    }, search ? 350 : 80)
-    return () => clearTimeout(t)
-  }, [
-    initialized,
-    leadTabs,
-    priority,
-    days,
-    fromDate,
-    toDate,
-    search,
-    pageSize,
-    sortBy,
-    sortDir,
-    view,
-    liveEpoch,
-  ])
-
+  // Load only the active tab/filter. Prefetching every stage in parallel was
+  // saturating middleware session lookups and keeping the UI on "Loading…".
   useEffect(() => {
     if (!initialized) return
     let cancelled = false
@@ -298,7 +264,7 @@ export default function LeadsPage() {
     async function load() {
       const cached = getCachedLeads(listQuery)
       const mustRevalidate = liveEpoch > appliedLiveEpoch.current
-      // Instant paint from prefetch — never flash "Loading…" on tab switch.
+      // Instant paint from cache — never flash "Loading…" on tab switch.
       if (cached) {
         startTransition(() => {
           setLeads(cached.data)
@@ -309,19 +275,24 @@ export default function LeadsPage() {
           setError(null)
         })
         const fresh = Date.now() - cached.fetchedAt < CACHE_FRESH_MS
-        if (fresh && !mustRevalidate) return
+        if (fresh && !mustRevalidate) {
+          appliedLiveEpoch.current = liveEpoch
+          return
+        }
       } else {
         setLoading(true)
       }
 
       try {
-        const result = await fetchLeads(listQuery, { force: true })
+        const result = await fetchLeads(listQuery, {
+          force: mustRevalidate || !cached,
+        })
         if (cancelled) return
         setLeads(result.data)
         setTotalPages(result.totalPages)
         setTotal(result.total)
         setError(null)
-        if (mustRevalidate) appliedLiveEpoch.current = liveEpoch
+        appliedLiveEpoch.current = liveEpoch
       } catch (err) {
         if (cancelled) return
         if (!cached) {
@@ -702,7 +673,7 @@ export default function LeadsPage() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {loading && leads.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Loading leads…</p>
+        <LeadsLoadingState view={view} />
       ) : view === 'kanban' ? (
         <LeadsKanban data={leads} onChanged={refresh} />
       ) : (

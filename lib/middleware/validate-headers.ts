@@ -5,13 +5,12 @@
 // headers set by middleware.ts. This is the critical security boundary:
 //
 //   middleware.ts (Edge Runtime)
-//     → calls /api/internal/session (Node Runtime, Prisma)
-//     → sets x-user-id, x-org-id, x-user-role headers
+//     → may set x-user-id / x-org-id from a short-lived session cache
 //
 //   API routes (Node Runtime)
-//     → validateRequest(req) re-fetches user from DB
-//     → trusts the userId (derived from JWT → Supabase → DB lookup)
-//     → does NOT trust role/department/status (could be stale)
+//     → validateRequest(req) resolves user from headers OR Bearer token
+//     → caches the DB user row briefly so parallel leads/stats/me calls
+//       don't each pay a Prisma round-trip
 //
 // Usage in API routes:
 //   export const GET = withErrorHandler(async (req) => {
@@ -20,6 +19,7 @@
 //   })
 
 import { prisma } from '@/lib/db'
+import { supabase } from '@/lib/supabase-clients'
 import { UnauthorizedError } from '@/lib/api-response'
 import { isAuthDisabled } from '@/lib/dev-auth'
 import { resolveDevBypassUser } from '@/lib/dev-bootstrap'
@@ -41,22 +41,102 @@ export interface RequestContext {
   }
 }
 
+const USER_TTL_MS = 30_000
+const userCache = new Map<string, { ctx: RequestContext; expires: number }>()
+const userInflight = new Map<string, Promise<RequestContext>>()
+const tokenUserCache = new Map<string, { userId: string; expires: number }>()
+
+async function loadUserContext(userId: string, expectedOrgId?: string | null): Promise<RequestContext> {
+  const hit = userCache.get(userId)
+  if (hit && hit.expires > Date.now()) {
+    if (expectedOrgId && hit.ctx.orgId !== expectedOrgId) {
+      throw new UnauthorizedError('Organization mismatch — possible session hijacking')
+    }
+    return hit.ctx
+  }
+
+  const pending = userInflight.get(userId)
+  if (pending) {
+    const ctx = await pending
+    if (expectedOrgId && ctx.orgId !== expectedOrgId) {
+      throw new UnauthorizedError('Organization mismatch — possible session hijacking')
+    }
+    return ctx
+  }
+
+  const promise = (async (): Promise<RequestContext> => {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        status: true,
+        orgId: true,
+        department: true,
+        designation: true,
+      },
+    })
+
+    if (!user) {
+      throw new UnauthorizedError('User not found — account may have been deleted')
+    }
+    if (user.status !== 'active') {
+      throw new UnauthorizedError(`Account is ${user.status} — contact your administrator`)
+    }
+
+    const ctx: RequestContext = {
+      userId: user.id,
+      orgId: user.orgId,
+      role: user.role,
+      department: user.department,
+      designation: user.designation,
+      user,
+    }
+    userCache.set(userId, { ctx, expires: Date.now() + USER_TTL_MS })
+    return ctx
+  })().finally(() => {
+    userInflight.delete(userId)
+  })
+
+  userInflight.set(userId, promise)
+  const ctx = await promise
+  if (expectedOrgId && ctx.orgId !== expectedOrgId) {
+    throw new UnauthorizedError('Organization mismatch — possible session hijacking')
+  }
+  return ctx
+}
+
+async function resolveUserIdFromBearer(req: Request): Promise<string | null> {
+  const authHeader = req.headers.get('authorization')
+  if (!authHeader?.startsWith('Bearer ')) return null
+  const token = authHeader.slice(7)
+  if (!token) return null
+
+  const cached = tokenUserCache.get(token)
+  if (cached && cached.expires > Date.now()) return cached.userId
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser(token)
+  if (error || !user) return null
+
+  tokenUserCache.set(token, { userId: user.id, expires: Date.now() + USER_TTL_MS })
+  return user.id
+}
+
 /**
  * Validate the current request by re-verifying the user from the database.
  *
- * The userId comes from the middleware's session resolution (JWT → Supabase → DB).
- * This function re-fetches the user to ensure:
- *   1. The user still exists
- *   2. The user is still active
- *   3. We have fresh role/department data (not stale headers)
- *
- * Throws UnauthorizedError if the user is invalid.
+ * Accepts either middleware headers (x-user-id / x-org-id) or an Authorization
+ * Bearer token from the browser API client.
  */
 export async function validateRequest(req: Request): Promise<RequestContext> {
   let userId = req.headers.get('x-user-id')
   let orgId = req.headers.get('x-org-id')
 
-  // Dev bypass: middleware may not have attached headers (empty DB / session miss).
   if ((!userId || !orgId) && isAuthDisabled()) {
     const bypass = await resolveDevBypassUser()
     if (bypass) {
@@ -65,45 +145,15 @@ export async function validateRequest(req: Request): Promise<RequestContext> {
     }
   }
 
-  if (!userId || !orgId) {
-    throw new UnauthorizedError('Missing user context — request must go through middleware')
+  if (!userId) {
+    userId = await resolveUserIdFromBearer(req)
   }
 
-  // Re-verify from DB — catches deleted users, deactivated accounts, role changes
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      role: true,
-      status: true,
-      orgId: true,
-      department: true,
-      designation: true,
-    },
-  })
-
-  if (!user) {
-    throw new UnauthorizedError('User not found — account may have been deleted')
+  if (!userId) {
+    throw new UnauthorizedError('Missing user context — sign in again')
   }
 
-  if (user.status !== 'active') {
-    throw new UnauthorizedError(`Account is ${user.status} — contact your administrator`)
-  }
-
-  if (user.orgId !== orgId) {
-    throw new UnauthorizedError('Organization mismatch — possible session hijacking')
-  }
-
-  return {
-    userId: user.id,
-    orgId: user.orgId,
-    role: user.role,
-    department: user.department,
-    designation: user.designation,
-    user,
-  }
+  return loadUserContext(userId, orgId)
 }
 
 /**

@@ -4,7 +4,13 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { Button } from '@/components/ui/button'
-import { AuthField, AuthShell, authInputClass } from '@/components/auth/auth-shell'
+import {
+  AuthField,
+  AuthShell,
+  authButtonClass,
+  authInputClass,
+  authLinkClass,
+} from '@/components/auth/auth-shell'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -34,22 +40,18 @@ export default function ForgotPasswordPage() {
       title="Reset your password"
       subtitle="We’ll email you a secure link if that account exists."
       footer={
-        <Link href="/auth/login" className="font-medium text-accent underline-offset-2 hover:underline">
+        <Link href="/auth/login" className={authLinkClass}>
           Back to sign in
         </Link>
       }
     >
       {sent ? (
-        <div className="rounded-xl border border-border/80 bg-card/80 px-5 py-6 text-center shadow-soft backdrop-blur-sm">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            If an account exists for{' '}
-            <span className="font-medium text-foreground">{email}</span>, a reset link is on its way.
-            Check your inbox and spam folder.
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] px-5 py-6 text-center">
+          <p className="text-sm leading-relaxed text-slate-400">
+            If an account exists for <span className="font-medium text-slate-100">{email}</span>, a
+            reset link is on its way. Check your inbox and spam folder.
           </p>
-          <Link
-            href="/auth/login"
-            className="mt-5 inline-block text-sm font-medium text-accent underline-offset-2 hover:underline"
-          >
+          <Link href="/auth/login" className={`mt-5 inline-block text-sm ${authLinkClass}`}>
             Return to sign in
           </Link>
         </div>
@@ -68,15 +70,11 @@ export default function ForgotPasswordPage() {
             />
           </AuthField>
           {error && (
-            <p className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <p className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-300">
               {error}
             </p>
           )}
-          <Button
-            type="submit"
-            disabled={loading}
-            className="h-11 w-full rounded-full text-sm font-semibold shadow-soft"
-          >
+          <Button type="submit" disabled={loading} className={authButtonClass}>
             {loading ? 'Sending…' : 'Send reset link'}
           </Button>
         </form>

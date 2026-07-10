@@ -41,7 +41,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
   const { totalAmount, discount, finalAmount } = calculateQuoteTotals(input.items)
 
   const quote = await prisma.$transaction(async (tx) => {
-    const quoteNumber = await nextQuoteNumber(orgId)
+    const quoteNumber = await nextQuoteNumber(orgId, undefined, tx)
 
     const created = await tx.quote.create({
       data: {
@@ -62,7 +62,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 
     const timeline = await tx.timeline.upsert({
       where: { leadId: lead.id },
-      create: { orgId, leadId: lead.id },
+      create: { leadId: lead.id },
       update: {},
     })
 

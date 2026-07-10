@@ -29,29 +29,42 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
     throw new NotFoundError('Lead')
   }
 
+  // Keep this payload lean — the drawer was stuck on "Loading lead…" while
+  // unbounded activities/timeline/checklists blocked the response under load.
   const lead = await prisma.lead.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
     include: {
-      contact: true,
+      contact: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+        },
+      },
       assignedTo: { select: { id: true, fullName: true, email: true } },
       createdBy: { select: { id: true, fullName: true, email: true } },
-      checklists: { include: { items: true } },
-      activities: { orderBy: { createdAt: 'desc' } },
-      timeline: { include: { events: { orderBy: { createdAt: 'desc' } } } },
-      quotes: true,
-      purchaseRequests: true,
+      activities: {
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      },
+      timeline: {
+        include: {
+          events: {
+            orderBy: { createdAt: 'desc' },
+            take: 30,
+          },
+        },
+      },
+      quotes: {
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      },
     },
   })
 
   if (!lead) throw new NotFoundError('Lead')
-
-  // Increment view count / lastViewedAt (fire-and-forget, doesn't block response)
-  prisma.lead
-    .update({
-      where: { id: lead.id },
-      data: { viewCount: { increment: 1 }, lastViewedAt: new Date() },
-    })
-    .catch((err) => console.error('Failed to update lead view count:', err))
 
   return successResponse(lead)
 })
@@ -99,7 +112,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     const timeline = await prisma.timeline.upsert({
       where: { leadId: lead.id },
       update: {},
-      create: { orgId: ctx.orgId, leadId: lead.id },
+      create: { leadId: lead.id },
     })
 
     const changesSummary = Object.entries(changedFields)

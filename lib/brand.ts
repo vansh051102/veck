@@ -5,8 +5,7 @@ export const BRAND = {
   /** Hero-level line under the wordmark */
   tagline: 'From first call to final dispatch.',
   /** One supporting sentence for auth / marketing surfaces */
-  description:
-    'Marketing, sales, and purchase on one steel pipeline — every enquiry owned, every quote followed, every order closed.',
+  description: 'Steel trading CRM — leads, quotes, and purchase on one desk.',
   /** Shorter meta description */
   metaDescription:
     'veck — CRM for steel trading teams. Leads, quotes, purchase, and order execution in one workspace.',

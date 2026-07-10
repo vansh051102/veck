@@ -84,6 +84,7 @@ export function LeadDetailPanel({
   onClose,
   initialView = 'lead',
   initialTab = 'requirements',
+  openQuoteForm = false,
 }: {
   lead: LeadDetailData
   onChanged: () => void
@@ -92,6 +93,7 @@ export function LeadDetailPanel({
   // row quick-actions: call/message/reminder icons and the Create Quote button).
   initialView?: 'lead' | 'quotation'
   initialTab?: SubTab
+  openQuoteForm?: boolean
 }) {
   const { toast } = useToast()
   const canEdit = useHasPermission('leads:edit')
@@ -290,7 +292,12 @@ export function LeadDetailPanel({
           overflow-y-auto engages instead of the whole panel overflowing. */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {view === 'quotation' ? (
-          <LeadQuotes leadId={lead.id} quotes={lead.quotes} onChanged={onChanged} />
+          <LeadQuotes
+            leadId={lead.id}
+            quotes={lead.quotes}
+            onChanged={onChanged}
+            autoOpenForm={openQuoteForm}
+          />
         ) : subTab === 'requirements' ? (
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">

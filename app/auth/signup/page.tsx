@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { Button } from '@/components/ui/button'
-import { AuthField, AuthShell, authInputClass } from '@/components/auth/auth-shell'
+import { AuthField, AuthShell, authButtonClass, authInputClass, authLinkClass } from '@/components/auth/auth-shell'
 import { dashboardRouteForRole } from '@/lib/dashboard-routes'
 
 function passwordStrength(password: string): { score: number; label: string } {
@@ -93,7 +93,7 @@ export default function SignupPage() {
       footer={
         <>
           Already on veck?{' '}
-          <Link href="/auth/login" className="font-medium text-accent underline-offset-2 hover:underline">
+          <Link href="/auth/login" className={authLinkClass}>
             Sign in
           </Link>
         </>
@@ -154,15 +154,15 @@ export default function SignupPage() {
                             : strength.score >= 2
                               ? 'bg-amber-500'
                               : 'bg-destructive'
-                          : 'bg-border'
+                          : 'bg-white/10'
                       }`}
                     />
                   ))}
                 </div>
-                <span className="text-xs text-muted-foreground">{strength.label}</span>
+                <span className="text-xs text-slate-400">{strength.label}</span>
               </div>
             ) : (
-              <p className="mt-1 text-xs text-muted-foreground">At least 8 characters</p>
+              <p className="mt-1 text-xs text-slate-500">At least 8 characters</p>
             )
           }
         >
@@ -181,7 +181,7 @@ export default function SignupPage() {
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:text-slate-200"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -203,20 +203,16 @@ export default function SignupPage() {
         </AuthField>
 
         {error && (
-          <p className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <p className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-300">
             {error}
           </p>
         )}
 
-        <Button
-          type="submit"
-          disabled={loading}
-          className="h-11 w-full rounded-full text-sm font-semibold shadow-soft transition-transform active:scale-[0.99]"
-        >
+        <Button type="submit" disabled={loading} className={authButtonClass}>
           {loading ? 'Creating workspace…' : 'Create workspace'}
         </Button>
 
-        <p className="text-center text-xs leading-relaxed text-muted-foreground">
+        <p className="text-center text-xs leading-relaxed text-slate-500">
           By continuing you agree to use veck for your team&apos;s lead and order operations.
         </p>
       </form>

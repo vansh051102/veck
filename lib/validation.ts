@@ -210,7 +210,11 @@ export const CreateQuoteSchema = z.object({
   notes: z.string().optional(),
 })
 
-export const UpdateQuoteSchema = CreateQuoteSchema.partial()
+export const UpdateQuoteSchema = CreateQuoteSchema.omit({ validUntil: true })
+  .partial()
+  .extend({
+    validUntil: z.coerce.date().optional(),
+  })
 
 export const SendQuoteSchema = z.object({
   recipientEmail: z.string().email('Invalid email'),

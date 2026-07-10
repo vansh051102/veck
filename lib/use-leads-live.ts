@@ -4,8 +4,8 @@ import { useEffect, useRef } from 'react'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 
 /**
- * Keep leads UI fresh: Supabase Realtime on Lead rows + quiet polling fallback.
- * Callers re-fetch softly — never blank the table or wipe tab prefetch cache.
+ * Keep leads UI fresh via Supabase Realtime only.
+ * Polling was removed — it re-triggered list fetches and starved the lead drawer.
  */
 export function useLeadsLive(onChange: () => void) {
   const onChangeRef = useRef(onChange)
@@ -13,12 +13,16 @@ export function useLeadsLive(onChange: () => void) {
 
   useEffect(() => {
     let debounce: ReturnType<typeof setTimeout> | null = null
+    let lastBump = 0
 
     function bump() {
+      const now = Date.now()
+      if (now - lastBump < 5_000) return
       if (debounce) clearTimeout(debounce)
       debounce = setTimeout(() => {
+        lastBump = Date.now()
         onChangeRef.current()
-      }, 250)
+      }, 1_000)
     }
 
     const channel = supabaseBrowser
@@ -30,23 +34,8 @@ export function useLeadsLive(onChange: () => void) {
       )
       .subscribe()
 
-    // Fallback when Realtime isn't enabled on the project yet.
-    const poll = setInterval(() => {
-      onChangeRef.current()
-    }, 20_000)
-
-    const onFocus = () => onChangeRef.current()
-    window.addEventListener('focus', onFocus)
-    const onVis = () => {
-      if (document.visibilityState === 'visible') onChangeRef.current()
-    }
-    document.addEventListener('visibilitychange', onVis)
-
     return () => {
       if (debounce) clearTimeout(debounce)
-      clearInterval(poll)
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onVis)
       supabaseBrowser.removeChannel(channel)
     }
   }, [])

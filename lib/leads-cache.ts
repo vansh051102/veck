@@ -1,6 +1,5 @@
 import { api } from '@/lib/api-client'
 import type { LeadRow } from '@/components/leads-table'
-import type { LeadTab } from '@/lib/lead-stages'
 
 export interface LeadListResult {
   data: LeadRow[]
@@ -115,22 +114,11 @@ export async function fetchLeads(q: LeadListQuery, opts?: { force?: boolean }): 
   return promise
 }
 
-/** Prefetch every stage tab for the current non-stage filters (page 1). */
+/** Prefetch disabled — parallel stage fetches saturated the API and blocked the drawer. */
 export async function prefetchLeadTabs(
-  tabs: LeadTab[],
-  base: Omit<LeadListQuery, 'stage' | 'contactOutcome' | 'page'>,
-  opts?: { force?: boolean }
+  _tabs: unknown[],
+  _base: Omit<LeadListQuery, 'stage' | 'contactOutcome' | 'page'>,
+  _opts?: { force?: boolean }
 ) {
-  const jobs = tabs.map((tab) =>
-    fetchLeads(
-      {
-        ...base,
-        stage: tab.stage ?? '',
-        contactOutcome: tab.contactOutcome ?? '',
-        page: 1,
-      },
-      opts
-    ).catch(() => null)
-  )
-  await Promise.all(jobs)
+  return
 }

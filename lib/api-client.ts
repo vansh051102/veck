@@ -69,4 +69,29 @@ export const api = {
     request<T>(path, { method: 'PUT', body: data ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   upload: <T>(path: string, form: FormData) => uploadRequest<T>(path, form),
+  /** Fetch a binary API response (e.g. PDF). */
+  async fetchBlob(path: string): Promise<Blob> {
+    const {
+      data: { session },
+    } = await supabaseBrowser.auth.getSession()
+
+    const res = await fetch(`/api/v1${path}`, {
+      headers: {
+        ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+      },
+    })
+
+    if (!res.ok) {
+      let message = 'Could not load file'
+      try {
+        const body = (await res.json()) as ApiEnvelope<unknown>
+        message = body.error?.message || message
+      } catch {
+        /* binary error body */
+      }
+      throw new ApiError(res.status, message)
+    }
+
+    return res.blob()
+  },
 }

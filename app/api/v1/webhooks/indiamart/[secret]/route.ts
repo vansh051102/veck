@@ -156,7 +156,7 @@ export async function POST(req: Request, { params }: Params) {
       // assignee knows this buyer re-submitted via IndiaMART.
       const timeline = await prisma.timeline.upsert({
         where: { leadId: result.existingLead.id },
-        create: { orgId, leadId: result.existingLead.id },
+        create: { leadId: result.existingLead.id },
         update: {},
       })
       await prisma.timelineEvent.create({

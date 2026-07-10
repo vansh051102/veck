@@ -33,7 +33,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
   const input = parsed.data
 
   const pr = await prisma.$transaction(async (tx) => {
-    const prNumber = await nextPurchaseRequestNumber(orgId)
+    const prNumber = await nextPurchaseRequestNumber(orgId, undefined, tx)
 
     const created = await tx.purchaseRequest.create({
       data: {
@@ -51,7 +51,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 
     const timeline = await tx.timeline.upsert({
       where: { leadId: lead.id },
-      create: { orgId, leadId: lead.id },
+      create: { leadId: lead.id },
       update: {},
     })
 

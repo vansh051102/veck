@@ -97,6 +97,15 @@ export function useCurrentUser(): CurrentUser | null {
 }
 
 /**
+ * Hook to get the current org from AuthProvider context.
+ * Returns null if not authenticated or still loading.
+ */
+export function useCurrentOrg(): { id: string; name: string } | null {
+  const { org } = useAuth()
+  return org
+}
+
+/**
  * Hook to check if the current user has a specific permission.
  * Returns false if user is not loaded yet.
  */

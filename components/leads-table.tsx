@@ -35,7 +35,14 @@ export interface LeadRow {
   quotationNumber?: string | null
 }
 
-type DrawerTarget = { id: string; view?: 'lead' | 'quotation'; tab?: SubTab }
+type DrawerTarget = {
+  id: string
+  seed?: LeadRow
+  view?: 'lead' | 'quotation'
+  tab?: SubTab
+  /** Open the quote create form (Create Quote only — not View Quote). */
+  openQuoteForm?: boolean
+}
 
 export interface OrgUser {
   id: string
@@ -134,12 +141,20 @@ export function LeadsTable({
   const [hoveredLeadId, setHoveredLeadId] = useState<string | null>(null)
   const [popoverAnchor, setPopoverAnchor] = useState<PopoverAnchor | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoveredLead = hoveredLeadId ? data.find((l) => l.id === hoveredLeadId) : null
 
   const allSelected = data.length > 0 && data.every((l) => selected.has(l.id))
 
-  function openLead(id: string, opts?: { view?: 'lead' | 'quotation'; tab?: SubTab }) {
+  function openLead(
+    lead: LeadRow | string,
+    opts?: { view?: 'lead' | 'quotation'; tab?: SubTab; openQuoteForm?: boolean }
+  ) {
     handleRowLeave()
-    setDrawer({ id, ...opts })
+    if (typeof lead === 'string') {
+      setDrawer({ id: lead, ...opts })
+      return
+    }
+    setDrawer({ id: lead.id, seed: lead, ...opts })
   }
 
   function handleRowEnter(id: string, x: number, y: number) {
@@ -198,7 +213,7 @@ export function LeadsTable({
         {data.map((lead) => (
           <button
             key={lead.id}
-            onClick={() => openLead(lead.id)}
+            onClick={() => openLead(lead)}
             className="rounded-lg border border-border bg-card p-3 text-left hover:bg-muted"
           >
             <div className="flex items-center gap-2">
@@ -278,7 +293,7 @@ export function LeadsTable({
                   <td className="crm-table-cell">
                     <button
                       type="button"
-                      onClick={() => openLead(lead.id)}
+                      onClick={() => openLead(lead)}
                       className="flex items-center gap-2 text-left"
                     >
                       <SourceGlyph source={lead.source} />
@@ -387,7 +402,12 @@ export function LeadsTable({
                     <div className="flex flex-col items-end gap-1.5">
                       <button
                         type="button"
-                        onClick={() => openLead(lead.id, { view: 'quotation' })}
+                        onClick={() =>
+                          openLead(lead, {
+                            view: 'quotation',
+                            openQuoteForm: !lead.hasQuote,
+                          })
+                        }
                         className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90"
                       >
                         {lead.hasQuote ? 'View Quote' : 'Create Quote'}
@@ -395,7 +415,7 @@ export function LeadsTable({
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => openLead(lead.id, { view: 'lead', tab: 'calls' })}
+                          onClick={() => openLead(lead, { view: 'lead', tab: 'calls' })}
                           className={iconBtnClass}
                           aria-label="Call Log"
                           title="Call Log"
@@ -404,7 +424,7 @@ export function LeadsTable({
                         </button>
                         <button
                           type="button"
-                          onClick={() => openLead(lead.id, { view: 'lead', tab: 'messages' })}
+                          onClick={() => openLead(lead, { view: 'lead', tab: 'messages' })}
                           className={iconBtnClass}
                           aria-label="Log Message"
                           title="Log Message"
@@ -413,7 +433,7 @@ export function LeadsTable({
                         </button>
                         <button
                           type="button"
-                          onClick={() => openLead(lead.id, { view: 'lead', tab: 'reminders' })}
+                          onClick={() => openLead(lead, { view: 'lead', tab: 'reminders' })}
                           className={iconBtnClass}
                           aria-label="Reminder"
                           title="Reminder"
@@ -433,14 +453,29 @@ export function LeadsTable({
       {drawer && (
         <LeadDetailDrawer
           leadId={drawer.id}
+          seed={drawer.seed}
           initialView={drawer.view}
           initialTab={drawer.tab}
+          openQuoteForm={drawer.openQuoteForm}
           onClose={() => setDrawer(null)}
           onChanged={onChanged}
         />
       )}
 
-      <LeadActivityPopover leadId={hoveredLeadId} anchor={popoverAnchor} />
+      <LeadActivityPopover
+        leadId={hoveredLeadId}
+        anchor={popoverAnchor}
+        preview={
+          hoveredLead
+            ? {
+                companyName: hoveredLead.companyName,
+                label: hoveredLead.lastActivityLabel,
+                at: hoveredLead.lastActivityAt,
+                stageDetails: hoveredLead.stageDetails,
+              }
+            : null
+        }
+      />
     </>
   )
 }

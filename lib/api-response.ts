@@ -119,6 +119,9 @@ export function errorResponse(error: unknown) {
       statusCode = 404
     } else if (prismaError.code === 'P2003') {
       message = 'Foreign key constraint violation'
+    } else if (prismaError.code === 'P2024') {
+      message = 'Server is busy — please try again in a moment'
+      statusCode = 503
     }
 
     return NextResponse.json(
@@ -134,6 +137,24 @@ export function errorResponse(error: unknown) {
         },
       },
       { status: statusCode }
+    )
+  }
+
+  if (error instanceof Error && error.name === 'PrismaClientValidationError') {
+    logger.error({ err: error }, 'Prisma validation error in API route')
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid data sent to the database',
+        },
+        meta: {
+          statusCode: 400,
+          timestamp: new Date().toISOString(),
+        },
+      },
+      { status: 400 }
     )
   }
 

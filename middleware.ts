@@ -28,18 +28,42 @@ type SessionData = {
   designation: string | null
 }
 
+// Short-lived cache + single-flight so parallel API calls share one
+// /api/internal/session round-trip instead of stampeding Prisma.
+const SESSION_TTL_MS = 30_000
+const sessionCache = new Map<string, { data: SessionData; expires: number }>()
+const sessionInflight = new Map<string, Promise<SessionData | null>>()
+
 async function resolveSession(req: NextRequest, accessToken?: string): Promise<SessionData | null> {
-  try {
-    const sessionRes = await fetch(new URL('/api/internal/session', req.url), {
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-    })
-    if (sessionRes.ok) {
-      return sessionRes.json()
-    }
-  } catch (error) {
-    console.error('Error resolving session:', error)
+  const cacheKey = accessToken ?? '__dev__'
+  const hit = sessionCache.get(cacheKey)
+  if (hit && hit.expires > Date.now()) {
+    return hit.data
   }
-  return null
+
+  const pending = sessionInflight.get(cacheKey)
+  if (pending) return pending
+
+  const promise = (async (): Promise<SessionData | null> => {
+    try {
+      const sessionRes = await fetch(new URL('/api/internal/session', req.url), {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      })
+      if (sessionRes.ok) {
+        const data = (await sessionRes.json()) as SessionData
+        sessionCache.set(cacheKey, { data, expires: Date.now() + SESSION_TTL_MS })
+        return data
+      }
+    } catch (error) {
+      console.error('Error resolving session:', error)
+    }
+    return null
+  })().finally(() => {
+    sessionInflight.delete(cacheKey)
+  })
+
+  sessionInflight.set(cacheKey, promise)
+  return promise
 }
 
 function attachUserHeaders(req: NextRequest, res: NextResponse, sessionData: SessionData) {
@@ -63,8 +87,19 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
+  const isApi = pathname.startsWith('/api/')
+
   // Dev bypass: skip login redirects; always impersonate dev user (ignore stale cookies).
   if (isAuthDisabled()) {
+    // API routes: don't block on session HTTP — validateRequest resolves the bypass user.
+    if (isApi) {
+      const hit = sessionCache.get('__dev__')
+      if (hit && hit.expires > Date.now()) {
+        return attachUserHeaders(req, res, hit.data)
+      }
+      void resolveSession(req)
+      return res
+    }
     const sessionData = await resolveSession(req)
     if (sessionData) {
       return attachUserHeaders(req, res, sessionData)
@@ -85,9 +120,25 @@ export async function middleware(req: NextRequest) {
   } = await supabase.auth.getSession()
 
   if (!session) {
+    if (isApi) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     const loginUrl = new URL('/auth/login', req.url)
     loginUrl.searchParams.set('redirectTo', pathname)
     return NextResponse.redirect(loginUrl)
+  }
+
+  // API fast path: use cached session headers when available. On cache miss,
+  // pass through immediately — the route's validateRequest resolves the Bearer
+  // token. Warm the cache in the background for the next request.
+  if (isApi) {
+    const cacheKey = session.access_token
+    const hit = sessionCache.get(cacheKey)
+    if (hit && hit.expires > Date.now()) {
+      return attachUserHeaders(req, res, hit.data)
+    }
+    void resolveSession(req, session.access_token)
+    return res
   }
 
   const sessionData = await resolveSession(req, session.access_token)
