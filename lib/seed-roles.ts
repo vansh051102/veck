@@ -1,5 +1,5 @@
 import { prisma } from './db'
-import { ROLE_PERMISSIONS } from './rbac'
+import { ROLE_PERMISSIONS } from './permissions'
 
 // ============================================================================
 // DEFAULT ROLE DEFINITIONS
@@ -88,16 +88,14 @@ export async function seedDefaultRoles(orgId: string): Promise<void> {
         hierarchyLevel: role.hierarchyLevel,
         permissions: role.permissions,
       },
+      // Do not overwrite permissions on existing roles — admins may have customized them
       update: {
         description: role.description,
         department: role.department,
         hierarchyLevel: role.hierarchyLevel,
-        permissions: role.permissions,
       },
     })
   }
-
-  console.log(`Seeded ${DEFAULT_ROLES.length} default roles for org ${orgId}`)
 }
 
 /**

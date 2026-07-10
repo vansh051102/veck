@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { UpdatePurchaseRequestSchema } from '@/lib/validation'
-import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
@@ -20,29 +20,34 @@ const PR_STATUSES = ['pending', 'sent_to_supplier', 'received', 'approved'] as c
 // GET /api/v1/purchase-requests/:id
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
-  const { orgId } = ctx
-  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.PURCHASE_REQUESTS_READ)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.PURCHASE_REQUESTS_READ
+  )
 
-  const pr = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId } })
+  const pr = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId: ctx.orgId } })
   if (!pr) throw new NotFoundError('Purchase request')
-
-  if (!await canAccessLead(ctx.userId, ctx.role, pr.leadId)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, pr.leadId))) {
     throw new NotFoundError('Purchase request')
   }
 
   return successResponse(pr)
 })
 
-// PUT /api/v1/purchase-requests/:id - Update PR fields and/or advance status
+// PUT /api/v1/purchase-requests/:id
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
   const { orgId, userId } = ctx
-  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.PURCHASE_REQUESTS_EDIT)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.PURCHASE_REQUESTS_EDIT
+  )
 
-  const existing = await prisma.purchaseRequest.findFirst({ where: { id: params.id, orgId } })
+  const existing = await prisma.purchaseRequest.findFirst({
+    where: { id: params.id, orgId },
+  })
   if (!existing) throw new NotFoundError('Purchase request')
-
-  if (!await canAccessLead(ctx.userId, ctx.role, existing.leadId)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, existing.leadId))) {
     throw new NotFoundError('Purchase request')
   }
 
@@ -69,7 +74,10 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     },
   })
 
-  await logAudit(orgId, userId, 'UPDATE', 'PurchaseRequest', pr.id, pr.prNumber, { status, ...parsed.data })
+  await logAudit(orgId, userId, 'UPDATE', 'PurchaseRequest', pr.id, pr.prNumber, {
+    status,
+    ...parsed.data,
+  })
 
   return successResponse(pr)
 })

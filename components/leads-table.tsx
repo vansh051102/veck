@@ -1,23 +1,15 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  Phone,
-  MessageSquare,
-  BellRing,
-  FileText,
-} from 'lucide-react'
+import { Hand, Phone, MessageSquare, BellRing } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { otherStages } from '@/lib/lead-stages'
 import { LEAD_PRIORITIES } from '@/lib/validation'
-import { useHasPermission } from '@/lib/use-current-user'
 import { Badge } from '@/components/ui/badge'
+import { statusPillClass } from '@/components/ui/status-pill'
 import { useToast } from '@/components/ui/toast'
-import { formatDate, getHoursUntil, isSlaOverdue } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { LeadDetailDrawer } from '@/components/lead-detail-drawer'
 import { LeadActivityPopover, type PopoverAnchor } from '@/components/lead-activity-popover'
 import type { SubTab } from '@/components/lead-detail-panel'
@@ -28,18 +20,21 @@ export interface LeadRow {
   stage: string
   priority: string
   slaBreached: boolean
-  slaDeadline: string
+  slaDeadline?: string | null
   createdAt: string
   lastActivityAt: string
   contact: { firstName: string; lastName: string; email: string; phone?: string | null } | null
   assignedTo: { id?: string; fullName: string } | null
   assignedToId?: string | null
-  // Lead origin: who sourced/created it (marketing attribution)
   createdBy?: { id: string; fullName: string } | null
   source?: string | null
+  hasQuote?: boolean
+  latestQuote?: { id: string; quoteNumber: string; status: string } | null
+  lastActivityLabel?: string | null
+  stageDetails?: string | null
+  quotationNumber?: string | null
 }
 
-// How a row quick-action opens the detail drawer (which view + sub-tab).
 type DrawerTarget = { id: string; view?: 'lead' | 'quotation'; tab?: SubTab }
 
 export interface OrgUser {
@@ -56,6 +51,14 @@ export type SortBy =
   | 'slaDeadline'
 export type SortDir = 'asc' | 'desc'
 
+/** @deprecated prefer StatusPill — kept for kanban Badge variants */
+export const PRIORITY_VARIANT: Record<string, 'default' | 'warning' | 'destructive'> = {
+  Low: 'default',
+  Medium: 'default',
+  High: 'warning',
+  Urgent: 'destructive',
+}
+
 export const STAGE_VARIANT: Record<
   string,
   'default' | 'primary' | 'success' | 'warning' | 'destructive'
@@ -64,31 +67,46 @@ export const STAGE_VARIANT: Record<
   Contacted: 'primary',
   Qualified: 'primary',
   'Quote Sent': 'warning',
+  'Order Confirmed': 'success',
+  'Order Closed': 'success',
   'Closed Won': 'success',
   'Deal Lost': 'destructive',
   Disqualified: 'destructive',
 }
 
-export const PRIORITY_VARIANT: Record<string, 'default' | 'warning' | 'destructive'> = {
-  Low: 'default',
-  Medium: 'default',
-  High: 'warning',
-  Urgent: 'destructive',
+const pillSelectClass =
+  'h-7 max-w-[130px] cursor-pointer appearance-none rounded-md border-0 px-2 text-xs font-medium outline-none focus:ring-2 focus:ring-ring'
+
+const iconBtnClass = 'crm-icon-btn'
+
+function shortDate(iso: string) {
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
-const cellSelectClass =
-  'h-7 max-w-[140px] rounded-md border border-border bg-background px-1 text-xs outline-none focus:ring-2 focus:ring-primary'
-
-// Small square icon button used for the per-row quick actions.
-const iconBtnClass =
-  'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
-
-// Simple windowed rendering: with large page sizes only the rows near the
-// viewport are mounted; spacer rows keep the scrollbar geometry correct.
-const ROW_HEIGHT = 41
-const VIRTUALIZE_THRESHOLD = 100
-const CONTAINER_HEIGHT = 640
-const OVERSCAN = 10
+function SourceGlyph({ source }: { source?: string | null }) {
+  const isIndiaMart = Boolean(source && /indiamart/i.test(source))
+  if (isIndiaMart) {
+    return (
+      <span
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-[10px] font-bold text-red-600"
+        title="IndiaMART"
+        aria-label="IndiaMART"
+      >
+        IM
+      </span>
+    )
+  }
+  return (
+    <span
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+      title={source || 'Added manually'}
+      aria-label={source || 'Added manually'}
+    >
+      <Hand className="h-3.5 w-3.5" />
+    </span>
+  )
+}
 
 interface LeadsTableProps {
   data: LeadRow[]
@@ -109,50 +127,21 @@ export function LeadsTable({
   onToggleSelect,
   onToggleSelectAll,
   onChanged,
-  sortBy,
-  sortDir,
-  onSort,
 }: LeadsTableProps) {
   const { toast } = useToast()
   const [busyId, setBusyId] = useState<string | null>(null)
-  // Which lead's slide-over detail drawer is open, and which view/tab to open
-  // it on (null = closed).
   const [drawer, setDrawer] = useState<DrawerTarget | null>(null)
-  // Which lead's row is currently hovered (for the recent-activity popover)
-  // and the cursor point it's anchored to. A single popover instance is
-  // rendered for the whole table rather than one per row.
   const [hoveredLeadId, setHoveredLeadId] = useState<string | null>(null)
   const [popoverAnchor, setPopoverAnchor] = useState<PopoverAnchor | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [scrollTop, setScrollTop] = useState(0)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  const canEdit = useHasPermission('leads:edit')
-  const canAssign = useHasPermission('leads:assign')
 
   const allSelected = data.length > 0 && data.every((l) => selected.has(l.id))
-  const virtualize = data.length > VIRTUALIZE_THRESHOLD
-
-  let visible = data
-  let topPad = 0
-  let bottomPad = 0
-  if (virtualize) {
-    const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
-    const count = Math.ceil(CONTAINER_HEIGHT / ROW_HEIGHT) + OVERSCAN * 2
-    const end = Math.min(data.length, start + count)
-    visible = data.slice(start, end)
-    topPad = start * ROW_HEIGHT
-    bottomPad = (data.length - end) * ROW_HEIGHT
-  }
 
   function openLead(id: string, opts?: { view?: 'lead' | 'quotation'; tab?: SubTab }) {
-    // Opening the drawer should dismiss any lingering hover popover.
     handleRowLeave()
     setDrawer({ id, ...opts })
   }
 
-  // Debounced (350ms) row hover: anchor the popover near the cursor so it
-  // stays on-screen (the component clamps/flips it against the viewport).
   function handleRowEnter(id: string, x: number, y: number) {
     hoverTimer.current = setTimeout(() => {
       setHoveredLeadId(id)
@@ -191,32 +180,13 @@ export function LeadsTable({
     inlineUpdate(lead, () => api.put(`/leads/${lead.id}/assign`, { assignedToId }), 'Lead reassigned')
   }
 
-  // Inline stage options: any other stage. Loss-path moves (Deal Lost /
-  // Disqualified) require a reason, so those go through the detail page.
   function inlineStageOptions(stage: string): string[] {
     return otherStages(stage).filter((s) => s !== 'Deal Lost' && s !== 'Disqualified')
   }
 
-  function SortHeader({ column, children }: { column: SortBy; children: React.ReactNode }) {
-    const active = sortBy === column
-    const Icon = !active ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown
-    return (
-      <th className="whitespace-nowrap px-4 py-2 font-medium">
-        <button
-          onClick={() => onSort(column)}
-          className="inline-flex items-center gap-1 hover:text-foreground"
-          aria-label={`Sort by ${column}`}
-        >
-          {children}
-          <Icon className={`h-3 w-3 ${active ? 'text-foreground' : 'opacity-40'}`} />
-        </button>
-      </th>
-    )
-  }
-
   if (data.length === 0) {
     return (
-      <div className="rounded-lg border border-border px-4 py-8 text-center text-sm text-muted-foreground">
+      <div className="rounded-lg border border-border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
         No leads match these filters.
       </div>
     )
@@ -224,7 +194,6 @@ export function LeadsTable({
 
   return (
     <>
-      {/* Mobile card view */}
       <div className="flex flex-col gap-2 md:hidden">
         {data.map((lead) => (
           <button
@@ -232,97 +201,93 @@ export function LeadsTable({
             onClick={() => openLead(lead.id)}
             className="rounded-lg border border-border bg-card p-3 text-left hover:bg-muted"
           >
-            <div className="flex items-center justify-between">
-              <span className="font-medium">{lead.companyName}</span>
-              {lead.slaBreached && <Badge variant="destructive">SLA</Badge>}
+            <div className="flex items-center gap-2">
+              <SourceGlyph source={lead.source} />
+              <span className="font-medium">{lead.companyName || 'Unnamed lead'}</span>
             </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {lead.contact ? `${lead.contact.firstName} ${lead.contact.lastName}` : 'No contact'} ·{' '}
-              {lead.assignedTo?.fullName || 'Unassigned'}
+            <p className="mt-1 text-sm text-muted-foreground">
+              {lead.contact
+                ? `${lead.contact.firstName} ${lead.contact.lastName}`
+                : 'No contact'}{' '}
+              · {lead.assignedTo?.fullName || 'Unassigned'}
             </p>
-            <div className="mt-2 flex items-center gap-2">
-              <Badge variant={STAGE_VARIANT[lead.stage] || 'default'}>{lead.stage}</Badge>
-              <Badge variant={PRIORITY_VARIANT[lead.priority] || 'default'}>{lead.priority}</Badge>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {formatDate(new Date(lead.lastActivityAt))}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className={cn('rounded-md px-2 py-0.5 text-xs font-medium', statusPillClass('stage', lead.stage))}>
+                {lead.stage}
+              </span>
+              <span
+                className={cn(
+                  'rounded-md px-2 py-0.5 text-xs font-medium',
+                  statusPillClass('priority', lead.priority || 'Unassigned')
+                )}
+              >
+                {lead.priority || 'Unassigned'}
               </span>
             </div>
           </button>
         ))}
       </div>
 
-      {/* Desktop table */}
-      <div
-        ref={scrollRef}
-        onScroll={(e) => {
-          if (virtualize) setScrollTop(e.currentTarget.scrollTop)
-          // A stale popover shouldn't float in place while the table scrolls
-          // out from under its anchor rect.
-          handleRowLeave()
-        }}
-        style={virtualize ? { maxHeight: CONTAINER_HEIGHT, overflowY: 'auto' } : undefined}
-        className="hidden overflow-x-auto rounded-lg border border-border md:block"
-      >
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-muted text-left text-muted-foreground">
+      <div className="hidden overflow-x-auto rounded-lg border border-border bg-card md:block">
+        <table className="w-full min-w-[1100px] text-sm">
+          <thead className="sticky top-0 z-10 border-b border-border bg-card text-left text-muted-foreground">
             <tr>
-              <th className="w-10 px-4 py-2">
+              <th className="w-10 px-3 py-2.5">
                 <input
                   type="checkbox"
                   checked={allSelected}
                   onChange={onToggleSelectAll}
-                  aria-label="Select all leads on this page"
+                  aria-label="Select all visible leads"
                   className="h-4 w-4 rounded border-border"
                 />
               </th>
-              <SortHeader column="companyName">Company</SortHeader>
-              <th className="whitespace-nowrap px-4 py-2 font-medium">Contact</th>
-              <SortHeader column="stage">Stage</SortHeader>
-              <SortHeader column="priority">Priority</SortHeader>
-              <th className="whitespace-nowrap px-4 py-2 font-medium">Assigned To</th>
-              <th className="whitespace-nowrap px-4 py-2 font-medium">Lead By</th>
-              <th className="whitespace-nowrap px-4 py-2 font-medium">SLA</th>
-              <SortHeader column="lastActivityAt">Last Activity</SortHeader>
-              <SortHeader column="createdAt">Created</SortHeader>
-              <th className="whitespace-nowrap px-4 py-2 text-right font-medium">Actions</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Source & Lead</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Contact</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Stage</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Stage details</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Priority</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Assigned to</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Last activity</th>
+              <th className="whitespace-nowrap px-3 py-2.5 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {topPad > 0 && (
-              <tr aria-hidden="true">
-                <td colSpan={11} style={{ height: topPad, padding: 0 }} />
-              </tr>
-            )}
-            {visible.map((lead) => {
+            {data.map((lead) => {
               const stageOptions = inlineStageOptions(lead.stage)
               const busy = busyId === lead.id
+              const priorityValue = lead.priority || 'Unassigned'
+              const activityLabel = lead.lastActivityLabel || 'Updated'
+              const displayName = lead.companyName?.trim() || 'Unnamed lead'
+
               return (
                 <tr
                   key={lead.id}
-                  className="border-t border-border hover:bg-muted"
+                  className="border-t border-border hover:bg-muted/40"
                   onMouseEnter={(e) => handleRowEnter(lead.id, e.clientX, e.clientY)}
                   onMouseLeave={handleRowLeave}
                 >
-                  <td className="px-4 py-2">
+                  <td className="crm-table-cell">
                     <input
                       type="checkbox"
                       checked={selected.has(lead.id)}
                       onChange={() => onToggleSelect(lead.id)}
-                      aria-label={`Select ${lead.companyName}`}
+                      aria-label={`Select ${displayName}`}
                       className="h-4 w-4 rounded border-border"
                     />
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2">
+                  <td className="crm-table-cell">
                     <button
+                      type="button"
                       onClick={() => openLead(lead.id)}
-                      className="font-medium underline-offset-2 hover:underline focus:underline"
+                      className="flex items-center gap-2 text-left"
                     >
-                      {lead.companyName}
+                      <SourceGlyph source={lead.source} />
+                      <span className="font-medium text-foreground hover:underline">{displayName}</span>
                     </button>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2">
+                  <td className="crm-table-cell">
                     {lead.contact ? (
-                      <div className="flex flex-col leading-tight">
+                      <div className="flex min-w-[140px] flex-col leading-snug">
                         <span className="font-medium">
                           {lead.contact.firstName} {lead.contact.lastName}
                         </span>
@@ -330,145 +295,137 @@ export function LeadsTable({
                           <span className="text-xs text-muted-foreground">{lead.contact.phone}</span>
                         )}
                         {lead.contact.email && (
-                          <span className="max-w-[200px] truncate text-xs text-muted-foreground">
+                          <span className="max-w-[180px] truncate text-xs text-muted-foreground">
                             {lead.contact.email}
                           </span>
                         )}
                       </div>
                     ) : (
-                      '—'
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    {stageOptions.length === 0 || !canEdit ? (
-                      <Badge variant={STAGE_VARIANT[lead.stage] || 'default'}>{lead.stage}</Badge>
-                    ) : (
-                      <select
-                        value={lead.stage}
-                        disabled={busy}
-                        onChange={(e) => changeStage(lead, e.target.value)}
-                        aria-label={`Stage for ${lead.companyName}`}
-                        className={cellSelectClass}
-                      >
-                        <option value={lead.stage}>{lead.stage}</option>
-                        {stageOptions.map((s) => (
-                          <option key={s} value={s}>
-                            → {s}
-                          </option>
-                        ))}
-                      </select>
-                    )}
+                  <td className="crm-table-cell">
+                    <div className="flex min-w-[120px] flex-col gap-0.5">
+                      {stageOptions.length === 0 ? (
+                        <span
+                          className={cn(
+                            'inline-flex w-fit rounded-md px-2 py-0.5 text-xs font-medium',
+                            statusPillClass('stage', lead.stage)
+                          )}
+                        >
+                          {lead.stage}
+                        </span>
+                      ) : (
+                        <select
+                          value={lead.stage}
+                          disabled={busy}
+                          onChange={(e) => changeStage(lead, e.target.value)}
+                          aria-label={`Stage for ${displayName}`}
+                          className={cn(pillSelectClass, statusPillClass('stage', lead.stage))}
+                        >
+                          <option value={lead.stage}>{lead.stage}</option>
+                          {stageOptions.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <span className="text-[11px] text-muted-foreground">• {activityLabel}</span>
+                    </div>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    {canEdit ? (
-                      <select
-                        value={lead.priority}
-                        disabled={busy}
-                        onChange={(e) => changePriority(lead, e.target.value)}
-                        aria-label={`Priority for ${lead.companyName}`}
-                        className={cellSelectClass}
-                      >
-                        {LEAD_PRIORITIES.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <Badge variant="outline">{lead.priority}</Badge>
-                    )}
+                  <td className="crm-table-cell">
+                    <span className="text-muted-foreground">{lead.stageDetails || 'No stage details'}</span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    {canAssign ? (
-                      <select
-                        value={lead.assignedToId || lead.assignedTo?.id || ''}
-                        disabled={busy}
-                        onChange={(e) => e.target.value && changeAssignee(lead, e.target.value)}
-                        aria-label={`Assignee for ${lead.companyName}`}
-                        className={cellSelectClass}
-                      >
-                        <option value="">Unassigned</option>
-                        {users.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.fullName}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-sm">{lead.assignedTo?.fullName || '—'}</span>
-                    )}
+                  <td className="crm-table-cell">
+                    <select
+                      value={lead.priority || ''}
+                      disabled={busy}
+                      onChange={(e) => changePriority(lead, e.target.value)}
+                      aria-label={`Priority for ${displayName}`}
+                      className={cn(pillSelectClass, statusPillClass('priority', priorityValue))}
+                    >
+                      <option value="">Unassigned</option>
+                      {LEAD_PRIORITIES.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
                   </td>
-                  <td
-                    className="whitespace-nowrap px-4 py-2 text-muted-foreground"
-                    title={lead.source ? `Source: ${lead.source}` : undefined}
-                  >
-                    {lead.createdBy?.fullName || '—'}
+                  <td className="crm-table-cell">
+                    <select
+                      value={lead.assignedToId || lead.assignedTo?.id || ''}
+                      disabled={busy}
+                      onChange={(e) => e.target.value && changeAssignee(lead, e.target.value)}
+                      aria-label={`Assignee for ${displayName}`}
+                      className="h-7 max-w-[140px] rounded-md border border-border bg-background px-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="">Unassigned</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.fullName}
+                        </option>
+                      ))}
+                    </select>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    {['Closed Won', 'Deal Lost', 'Disqualified'].includes(lead.stage) ? (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    ) : lead.slaBreached || isSlaOverdue(lead.slaDeadline) ? (
-                      <Badge variant="destructive">Breached</Badge>
-                    ) : getHoursUntil(lead.slaDeadline) <= 2 ? (
-                      <Badge variant="warning">{getHoursUntil(lead.slaDeadline)}h left</Badge>
-                    ) : (
-                      <Badge variant="success">On track</Badge>
-                    )}
+                  <td className="crm-table-cell">
+                    <div className="flex min-w-[140px] flex-col gap-1">
+                      <span className="text-muted-foreground">
+                        {activityLabel}: {shortDate(lead.lastActivityAt)}
+                      </span>
+                      {lead.slaBreached ? (
+                        <Badge variant="destructive">SLA breached</Badge>
+                      ) : lead.slaDeadline ? (
+                        <Badge variant="default">Due {formatDate(lead.slaDeadline)}</Badge>
+                      ) : (
+                        <Badge variant="default">No SLA</Badge>
+                      )}
+                    </div>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    {formatDate(new Date(lead.lastActivityAt))}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    {formatDate(new Date(lead.createdAt))}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    <div className="flex items-center justify-end gap-1">
+                  <td className="crm-table-cell">
+                    <div className="flex flex-col items-end gap-1.5">
                       <button
                         type="button"
                         onClick={() => openLead(lead.id, { view: 'quotation' })}
-                        className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        title="Create quote"
+                        className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90"
                       >
-                        <FileText className="h-3.5 w-3.5" />
-                        Quote
+                        {lead.hasQuote ? 'View Quote' : 'Create Quote'}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => openLead(lead.id, { view: 'lead', tab: 'calls' })}
-                        className={iconBtnClass}
-                        aria-label={`Log a call for ${lead.companyName}`}
-                        title="Log a call"
-                      >
-                        <Phone className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openLead(lead.id, { view: 'lead', tab: 'messages' })}
-                        className={iconBtnClass}
-                        aria-label={`Log a message for ${lead.companyName}`}
-                        title="Log a message"
-                      >
-                        <MessageSquare className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openLead(lead.id, { view: 'lead', tab: 'reminders' })}
-                        className={iconBtnClass}
-                        aria-label={`Add a reminder for ${lead.companyName}`}
-                        title="Add a reminder"
-                      >
-                        <BellRing className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openLead(lead.id, { view: 'lead', tab: 'calls' })}
+                          className={iconBtnClass}
+                          aria-label="Call Log"
+                          title="Call Log"
+                        >
+                          <Phone className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openLead(lead.id, { view: 'lead', tab: 'messages' })}
+                          className={iconBtnClass}
+                          aria-label="Log Message"
+                          title="Log Message"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openLead(lead.id, { view: 'lead', tab: 'reminders' })}
+                          className={iconBtnClass}
+                          aria-label="Reminder"
+                          title="Reminder"
+                        >
+                          <BellRing className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
               )
             })}
-            {bottomPad > 0 && (
-              <tr aria-hidden="true">
-                <td colSpan={11} style={{ height: bottomPad, padding: 0 }} />
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

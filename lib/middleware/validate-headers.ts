@@ -21,6 +21,8 @@
 
 import { prisma } from '@/lib/db'
 import { UnauthorizedError } from '@/lib/api-response'
+import { isAuthDisabled } from '@/lib/dev-auth'
+import { resolveDevBypassUser } from '@/lib/dev-bootstrap'
 
 export interface RequestContext {
   userId: string
@@ -34,7 +36,6 @@ export interface RequestContext {
     fullName: string
     role: string
     status: string
-    isSuperAdmin: boolean
     department: string | null
     designation: string | null
   }
@@ -52,22 +53,18 @@ export interface RequestContext {
  * Throws UnauthorizedError if the user is invalid.
  */
 export async function validateRequest(req: Request): Promise<RequestContext> {
-  return verifyUserContext(
-    req.headers.get('x-user-id'),
-    req.headers.get('x-org-id')
-  )
-}
+  let userId = req.headers.get('x-user-id')
+  let orgId = req.headers.get('x-org-id')
 
-/**
- * DB-verify a user context from the middleware-injected identity. Shared by
- * validateRequest (API routes, reads req.headers) and getActionContext (Server
- * Actions, reads next/headers). This is the security boundary — the userId is
- * trusted (JWT → Supabase → DB), role/status are re-fetched fresh.
- */
-export async function verifyUserContext(
-  userId: string | null,
-  orgId: string | null
-): Promise<RequestContext> {
+  // Dev bypass: middleware may not have attached headers (empty DB / session miss).
+  if ((!userId || !orgId) && isAuthDisabled()) {
+    const bypass = await resolveDevBypassUser()
+    if (bypass) {
+      userId = bypass.id
+      orgId = bypass.orgId
+    }
+  }
+
   if (!userId || !orgId) {
     throw new UnauthorizedError('Missing user context — request must go through middleware')
   }
@@ -81,7 +78,6 @@ export async function verifyUserContext(
       fullName: true,
       role: true,
       status: true,
-      isSuperAdmin: true,
       orgId: true,
       department: true,
       designation: true,

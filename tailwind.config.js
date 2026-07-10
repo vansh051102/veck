@@ -5,12 +5,10 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-geist-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       colors: {
         border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         muted: {
@@ -21,44 +19,29 @@ module.exports = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
-        },
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
-        },
-        secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
         },
         accent: {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
         },
+        highlight: 'hsl(var(--highlight))',
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
-        success: {
-          DEFAULT: 'hsl(var(--success))',
-          foreground: 'hsl(var(--success-foreground))',
-        },
-        warning: {
-          DEFAULT: 'hsl(var(--warning))',
-          foreground: 'hsl(var(--warning-foreground))',
-        },
+        ring: 'hsl(var(--ring))',
       },
       borderRadius: {
-        lg: '0.75rem',
-        md: '0.5rem',
-        sm: '0.375rem',
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       boxShadow: {
-        // Tinted with the slate hue rather than pure black — reads softer,
-        // matches the cool neutral palette.
-        sm: '0 1px 2px 0 hsl(222 47% 11% / 0.06), 0 1px 3px 0 hsl(222 47% 11% / 0.04)',
+        soft: '0 1px 2px 0 rgb(15 76 129 / 0.06), 0 1px 3px 0 rgb(15 76 129 / 0.08)',
+        modal: '0 8px 30px rgb(15 45 81 / 0.12)',
       },
     },
   },

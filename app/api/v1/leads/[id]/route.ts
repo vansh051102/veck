@@ -122,7 +122,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 
 // DELETE /api/v1/leads/:id - Soft delete (mark disqualified + closed status)
 // Consistent with the workflow engine: leads already in a terminal stage
-// (Closed Won / Deal Lost / Disqualified) cannot be deleted, matching the
+// (Order Closed / Deal Lost / Disqualified) cannot be deleted, matching the
 // stage-change endpoint's terminal-stage protection.
 export const DELETE = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
@@ -130,6 +130,10 @@ export const DELETE = withErrorHandler(async (req: Request, { params }: Params) 
     await rbacService.getUserPermissions(ctx.userId),
     PERMISSIONS.LEADS_DELETE
   )
+
+  if (!(await canAccessLead(ctx.userId, ctx.role, params.id))) {
+    throw new NotFoundError('Lead')
+  }
 
   const existing = await prisma.lead.findFirst({ where: { id: params.id, orgId: ctx.orgId } })
   if (!existing) throw new NotFoundError('Lead')

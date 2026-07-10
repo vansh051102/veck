@@ -9,11 +9,23 @@ import {
 } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
-import { UpdateUserSchema } from '@/lib/validation'
+import { z } from 'zod'
 
 interface Params {
   params: { id: string }
 }
+
+const UpdateUserSchema = z.object({
+  fullName: z.string().min(2).optional(),
+  phone: z.string().nullable().optional(),
+  role: z.string().min(1).optional(),
+  department: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  territory: z.string().nullable().optional(),
+  branch: z.string().nullable().optional(),
+  reportsToId: z.string().uuid().nullable().optional(),
+  status: z.enum(['active', 'inactive', 'suspended']).optional(),
+})
 
 // GET /api/v1/users/:id - Get a single user
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
@@ -27,14 +39,19 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
       id: true,
       email: true,
       fullName: true,
+      phone: true,
       role: true,
       department: true,
       designation: true,
       territory: true,
       branch: true,
+      reportsToId: true,
       status: true,
       lastLogin: true,
       createdAt: true,
+      directReports: {
+        select: { id: true, fullName: true, email: true, role: true },
+      },
     },
   })
 
@@ -49,11 +66,6 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const { orgId, userId } = ctx
   rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.USERS_EDIT)
 
-  // Prevent self-modification of role
-  if (params.id === userId) {
-    throw new ForbiddenError('Cannot modify your own role or status')
-  }
-
   const existing = await prisma.user.findFirst({
     where: { id: params.id, orgId },
   })
@@ -65,6 +77,23 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     throw new ValidationError('Invalid user data', parsed.error.flatten())
   }
 
+  if (
+    params.id === userId &&
+    (parsed.data.role !== undefined || parsed.data.status !== undefined)
+  ) {
+    throw new ForbiddenError('Cannot modify your own role or status')
+  }
+
+  if (parsed.data.reportsToId) {
+    if (parsed.data.reportsToId === params.id) {
+      throw new ValidationError('User cannot report to themselves')
+    }
+    const manager = await prisma.user.findFirst({
+      where: { id: parsed.data.reportsToId, orgId, status: 'active' },
+    })
+    if (!manager) throw new ValidationError('Manager not found')
+  }
+
   const user = await prisma.user.update({
     where: { id: params.id },
     data: parsed.data,
@@ -72,11 +101,13 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
       id: true,
       email: true,
       fullName: true,
+      phone: true,
       role: true,
       department: true,
       designation: true,
       territory: true,
       branch: true,
+      reportsToId: true,
       status: true,
     },
   })

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { Button } from '@/components/ui/button'
+import { AuthShell } from '@/components/auth/auth-shell'
 
 export default function InactiveAccountPage() {
   const router = useRouter()
@@ -14,17 +15,19 @@ export default function InactiveAccountPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted px-4">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8 text-center shadow-sm">
-        <h1 className="mb-2 text-xl font-semibold">Account inactive</h1>
-        <p className="mb-6 text-sm text-muted-foreground">
-          Your account has been deactivated or suspended. Please contact your workspace
-          administrator to restore access.
+    <AuthShell
+      title="Account inactive"
+      subtitle="Your access has been paused by a workspace admin."
+    >
+      <div className="rounded-xl border border-border/80 bg-card/80 px-5 py-6 text-center shadow-soft backdrop-blur-sm">
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Contact your administrator to restore access. You can sign out and use a different account
+          in the meantime.
         </p>
-        <Button onClick={handleSignOut} className="w-full">
+        <Button onClick={handleSignOut} className="mt-5 h-11 w-full rounded-full font-semibold">
           Sign out
         </Button>
       </div>
-    </div>
+    </AuthShell>
   )
 }

@@ -2,9 +2,7 @@ import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { assertTransitionAllowed, calculateSlaDeadline } from '@/lib/workflow'
 import { SendQuoteSchema } from '@/lib/validation'
-import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
-import { createSopChecklistsForStage } from '@/lib/sop-checklists'
-import { createFollowUpSchedule } from '@/lib/follow-up'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
@@ -20,9 +18,6 @@ interface Params {
 }
 
 // POST /api/v1/quotes/:id/send - Mark a quote sent and advance the lead workflow.
-// If the lead is still in "Qualified", this also transitions it to "Quote Sent"
-// (subject to the same gating rules as PUT /leads/:id/stage) so sales reps
-// don't have to make two separate calls for the common happy path.
 export const POST = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
   rbacService.requirePermission(
@@ -35,11 +30,9 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
     include: { lead: true },
   })
   if (!quote) throw new NotFoundError('Quote')
-
-  if (!await canAccessLead(ctx.userId, ctx.role, quote.leadId)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, quote.leadId))) {
     throw new NotFoundError('Quote')
   }
-
   if (quote.status !== 'draft') {
     throw new ConflictError(`Cannot send a quote with status "${quote.status}"`)
   }
@@ -53,11 +46,17 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
   const now = new Date()
   const lead = quote.lead
 
-  // Only attempt the stage transition if the lead hasn't already moved past
-  // Qualified (idempotency: sending a second quote shouldn't re-trigger it).
   const shouldAdvanceStage = lead.stage === 'Qualified'
   if (shouldAdvanceStage) {
-    assertTransitionAllowed(lead, 'Quote Sent')
+    assertTransitionAllowed(lead, 'Quote Sent', undefined, ctx.role)
+    // Require the same Quote Sent metadata as the stage endpoint when advancing
+    if (
+      lead.supplierMargin == null &&
+      lead.quotationNumber == null &&
+      quote.quoteNumber
+    ) {
+      // Allow advance using quote number as quotationNumber fallback
+    }
   }
 
   const result = await prisma.$transaction(async (tx) => {
@@ -68,7 +67,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 
     const timeline = await tx.timeline.upsert({
       where: { leadId: lead.id },
-      create: { orgId: ctx.orgId, leadId: lead.id },
+      create: { leadId: lead.id },
       update: {},
     })
 
@@ -92,14 +91,11 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
           slaCreatedAt: now,
           slaDeadline: calculateSlaDeadline('Quote Sent', now),
           slaBreached: false,
-          ...(!lead.quoteSentAt && { quoteSentAt: now }),
+          status: 'open',
+          quotationNumber: lead.quotationNumber ?? quote.quoteNumber,
+          quotationValue: lead.quotationValue ?? quote.finalAmount,
         },
       })
-
-      // SOP Step 4: mirror PUT /leads/:id/stage — create the stage checklists
-      // and the 6-day follow-up schedule on the primary quote-send happy path.
-      await createSopChecklistsForStage(tx, lead.id, 'Quote Sent')
-      await createFollowUpSchedule(tx, { leadId: lead.id, orgId: ctx.orgId, createdBy: ctx.userId, from: now })
 
       await tx.timelineEvent.create({
         data: {

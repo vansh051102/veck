@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { AppError } from './errors'
+import { AppError, ForbiddenError } from './errors'
+import { PermissionDeniedError } from './services/rbac.service'
 import { logger } from './logger'
 
 // Re-export all error classes for backward compatibility
@@ -65,6 +66,10 @@ export function paginatedResponse<T>(
 }
 
 export function errorResponse(error: unknown) {
+  if (error instanceof PermissionDeniedError) {
+    return errorResponse(new ForbiddenError(error.message))
+  }
+
   if (error instanceof AppError) {
     return NextResponse.json(
       {

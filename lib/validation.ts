@@ -57,7 +57,8 @@ export const LEAD_STAGES = [
   'Contacted',
   'Qualified',
   'Quote Sent',
-  'Closed Won',
+  'Order Confirmed',
+  'Order Closed',
   'Deal Lost',
   'Disqualified',
 ] as const
@@ -108,6 +109,18 @@ export const UpdateLeadStageSchema = z
       message:
         'Supplier margin, quotation number, product category, and quotation value are required when moving to Quote Sent',
     }
+  )
+  .refine(
+    (data) => {
+      if (
+        (data.stage === 'Deal Lost' || data.stage === 'Disqualified') &&
+        data.reason === 'Other'
+      ) {
+        return Boolean(data.reasonDetails && data.reasonDetails.trim().length > 0)
+      }
+      return true
+    },
+    { message: 'Details are required when reason is "Other"' }
   )
 
 export const AssignLeadSchema = z.object({

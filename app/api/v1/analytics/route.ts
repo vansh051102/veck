@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { PERMISSIONS, buildOwnershipFilter } from '@/lib/rbac'
+import { PERMISSIONS, buildOwnershipFilterAsync } from '@/lib/rbac'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
@@ -14,12 +14,15 @@ export const GET = withErrorHandler(async (req: Request) => {
   const role = ctx.role
   const department = ctx.department
 
-  const ownershipFilter = buildOwnershipFilter(userId, role, department, 'leads')
+  const ownershipFilter = await buildOwnershipFilterAsync(userId, role, department, 'leads')
+  const activityFilter = await buildOwnershipFilterAsync(userId, role, department, 'activities')
   const leadsWhere = {
     orgId,
     ...ownershipFilter,
   }
 
+  const terminalStages = ['Order Closed', 'Deal Lost', 'Disqualified', 'Closed Won']
+  const wonStages = ['Order Confirmed', 'Order Closed', 'Closed Won']
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 
   // Run all queries in parallel
@@ -34,9 +37,9 @@ export const GET = withErrorHandler(async (req: Request) => {
   ] = await Promise.all([
     prisma.lead.count({ where: leadsWhere }),
     prisma.lead.count({
-      where: { ...leadsWhere, stage: { notIn: ['Closed Won', 'Deal Lost', 'Disqualified'] } },
+      where: { ...leadsWhere, stage: { notIn: terminalStages } },
     }),
-    prisma.lead.count({ where: { ...leadsWhere, stage: 'Closed Won' } }),
+    prisma.lead.count({ where: { ...leadsWhere, stage: { in: wonStages } } }),
     prisma.lead.count({ where: { ...leadsWhere, slaBreached: true } }),
     prisma.lead.groupBy({
       by: ['stage'],
@@ -51,7 +54,7 @@ export const GET = withErrorHandler(async (req: Request) => {
       where: {
         orgId,
         createdAt: { gte: thirtyDaysAgo },
-        ...buildOwnershipFilter(userId, role, department, 'activities'),
+        ...activityFilter,
       },
       select: { type: true, createdAt: true },
     }),
@@ -60,34 +63,26 @@ export const GET = withErrorHandler(async (req: Request) => {
   // Per-salesperson stats. Team-wide numbers are admin-only: everyone else
   // sees only their own row, so reps can't browse colleagues' performance.
   const statsUsers = role === 'admin' ? orgUsers : orgUsers.filter((u) => u.id === userId)
-  const statsUserIds = statsUsers.map((u) => u.id)
-
-  // groupBy instead of 3-queries-per-user N+1.
-  const [assignedRows, wonRows, activityRows] = await Promise.all([
-    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: statsUserIds } }, _count: { _all: true } }),
-    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: statsUserIds }, stage: 'Closed Won' }, _count: { _all: true } }),
-    prisma.activity.groupBy({ by: ['createdBy'], where: { orgId, createdBy: { in: statsUserIds } }, _count: { _all: true } }),
-  ])
-  const assignedMap = new Map<string, number>()
-  for (const r of assignedRows) if (r.assignedToId) assignedMap.set(r.assignedToId, r._count._all)
-  const wonMap = new Map<string, number>()
-  for (const r of wonRows) if (r.assignedToId) wonMap.set(r.assignedToId, r._count._all)
-  const activityMap = new Map<string, number>()
-  for (const r of activityRows) if (r.createdBy) activityMap.set(r.createdBy, r._count._all)
-
-  const salespersonStats = statsUsers.map((user) => {
-    const assigned = assignedMap.get(user.id) ?? 0
-    const won = wonMap.get(user.id) ?? 0
-    return {
-      userId: user.id,
-      name: user.fullName,
-      role: user.role,
-      leadsAssigned: assigned,
-      leadsWon: won,
-      conversionRate: assigned > 0 ? Math.round((won / assigned) * 100) : 0,
-      activitiesLogged: activityMap.get(user.id) ?? 0,
-    }
-  })
+  const salespersonStats = await Promise.all(
+    statsUsers.map(async (user) => {
+      const [assigned, won, activities] = await Promise.all([
+        prisma.lead.count({ where: { orgId, assignedToId: user.id } }),
+        prisma.lead.count({
+          where: { orgId, assignedToId: user.id, stage: { in: wonStages } },
+        }),
+        prisma.activity.count({ where: { orgId, createdBy: user.id } }),
+      ])
+      return {
+        userId: user.id,
+        name: user.fullName,
+        role: user.role,
+        leadsAssigned: assigned,
+        leadsWon: won,
+        conversionRate: assigned > 0 ? Math.round((won / assigned) * 100) : 0,
+        activitiesLogged: activities,
+      }
+    })
+  )
 
   // Activity volume by day for last 30 days
   const activityByDay: Record<string, Record<string, number>> = {}

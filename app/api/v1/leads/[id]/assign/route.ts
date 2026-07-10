@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { AssignLeadSchema } from '@/lib/validation'
 import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
-import { PERMISSIONS } from '@/lib/rbac'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
 
@@ -16,6 +16,10 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const { orgId, userId } = ctx
   rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.LEADS_ASSIGN)
 
+  if (!(await canAccessLead(ctx.userId, ctx.role, params.id))) {
+    throw new NotFoundError('Lead')
+  }
+
   const lead = await prisma.lead.findFirst({ where: { id: params.id, orgId } })
   if (!lead) throw new NotFoundError('Lead')
 
@@ -26,7 +30,9 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   }
   const { assignedToId } = parsed.data
 
-  const assignee = await prisma.user.findFirst({ where: { id: assignedToId, orgId } })
+  const assignee = await prisma.user.findFirst({
+    where: { id: assignedToId, orgId, status: 'active' },
+  })
   if (!assignee) throw new NotFoundError('User')
 
   const now = new Date()

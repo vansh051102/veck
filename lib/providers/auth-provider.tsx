@@ -3,11 +3,11 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { api } from '@/lib/api-client'
-import { CurrentUser, CurrentOrg, MeResponse } from '@/lib/use-current-user'
+import { CurrentUser, MeResponse } from '@/lib/use-current-user'
 
 interface AuthContextValue {
   user: CurrentUser | null
-  org: CurrentOrg | null
+  org: { id: string; name: string } | null
   isLoading: boolean
   error: string | null
   refetch: () => Promise<void>
@@ -27,7 +27,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null)
-  const [org, setOrg] = useState<CurrentOrg | null>(null)
+  const [org, setOrg] = useState<{ id: string; name: string } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -94,15 +94,6 @@ export function useAuth(): AuthContextValue {
 export function useCurrentUser(): CurrentUser | null {
   const { user } = useAuth()
   return user
-}
-
-/**
- * Hook to get the current user's home organization (incl. moduleAccess).
- * Returns null if not authenticated or still loading.
- */
-export function useCurrentOrg(): CurrentOrg | null {
-  const { org } = useAuth()
-  return org
 }
 
 /**

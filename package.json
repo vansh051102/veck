@@ -1,7 +1,7 @@
 {
   "name": "veck",
-  "version": "0.0.1",
-  "description": "Process-driven steel trading CRM operating system",
+  "version": "0.1.0",
+  "description": "veck — workspace CRM for trading teams (veck.in)",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,10 +9,9 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "postinstall": "prisma generate",
-    "db:push": "prisma db push",
-    "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio",
+    "db:push": "bash -c 'set -a && source .env.local && set +a && exec prisma db push \"$@\"' --",
+    "db:migrate": "bash -c 'set -a && source .env.local && set +a && exec prisma migrate dev \"$@\"' --",
+    "db:studio": "bash -c 'set -a && source .env.local && set +a && exec prisma studio \"$@\"' --",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -31,7 +30,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
-    "@prisma/client": "^5.22.0",
+    "geist": "^1.7.2",
     "lodash-es": "^4.17.21",
     "lucide-react": "^0.294.0",
     "next": "^14.0.0",
@@ -45,6 +44,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",
+    "@prisma/client": "^5.4.0",
     "@testing-library/jest-dom": "^6.1.0",
     "@testing-library/react": "^14.0.0",
     "@types/jest": "^29.5.0",
@@ -62,10 +62,6 @@
     "prisma": "^5.4.0",
     "tailwindcss": "^3.3.0",
     "ts-jest": "^29.1.0",
-    "ts-node": "^10.9.2",
     "typescript": "^5.2.0"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
   }
 }

@@ -1,71 +1,70 @@
 'use client'
 
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Eye, EyeOff } from 'lucide-react'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { Button } from '@/components/ui/button'
+import { AuthField, AuthShell, authInputClass } from '@/components/auth/auth-shell'
 import { dashboardRouteForRole } from '@/lib/dashboard-routes'
 
-export default function LoginPage() {
-  return <Suspense><LoginPageContent /></Suspense>
-}
-
-function LoginPageContent() {
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(searchParams.get('email') ?? '')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const diagnostic = useMemo(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    return url ? null : 'WARN: NEXT_PUBLIC_SUPABASE_URL is not set'
-  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    const { error: signInError } = await supabaseBrowser.auth.signInWithPassword({ email, password })
+    const { error: signInError } = await supabaseBrowser.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
 
     if (signInError) {
       setLoading(false)
-      setError(signInError.message)
-      console.error('Sign in error:', signInError)
+      setError(
+        signInError.message === 'Invalid login credentials'
+          ? 'Email or password is incorrect'
+          : signInError.message
+      )
       return
     }
 
-    // Check for explicit redirect first
     const redirectTo = searchParams.get('redirectTo')
-    if (redirectTo) {
+    if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
       router.push(redirectTo)
       router.refresh()
       return
     }
 
-    // Fetch user role to determine redirect
     try {
-      const { data: { session } } = await supabaseBrowser.auth.getSession()
+      const {
+        data: { session },
+      } = await supabaseBrowser.auth.getSession()
       if (session?.access_token) {
         const res = await fetch('/api/v1/auth/me', {
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
         if (res.ok) {
           const body = await res.json()
-          const user = body?.data?.user ?? body?.user
-          if (user) {
-            const defaultPath = user.defaultDashboard || dashboardRouteForRole(user.role)
-            setLoading(false)
-            router.push(defaultPath)
-            router.refresh()
-            return
-          }
+          const user = body.data?.user ?? body.user
+          const defaultPath = user?.defaultDashboard || dashboardRouteForRole(user?.role ?? 'admin')
+          setLoading(false)
+          router.push(defaultPath)
+          router.refresh()
+          return
         }
       }
     } catch {
-      // Fall through to default
+      // fall through
     }
 
     setLoading(false)
@@ -74,54 +73,96 @@ function LoginPageContent() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted px-4">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8 shadow-sm">
-        <h1 className="mb-1 text-xl font-semibold">VECK</h1>
-        <p className="mb-6 text-sm text-muted-foreground">Sign in to your workspace</p>
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to your workspace"
+      footer={
+        <>
+          New to veck?{' '}
+          <Link href="/auth/signup" className="font-medium text-accent underline-offset-2 hover:underline">
+            Create a workspace
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <AuthField id="email" label="Email">
+          <input
+            id="email"
+            type="email"
+            required
+            autoComplete="email"
+            placeholder="you@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={authInputClass}
+          />
+        </AuthField>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
+        <AuthField
+          id="password"
+          label="Password"
+          hint={
+            <div className="flex justify-end">
+              <Link
+                href="/auth/forgot-password"
+                className="text-sm text-accent underline-offset-2 hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
+          }
+        >
+          <div className="relative">
             <input
               id="password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               required
+              autoComplete="current-password"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+              className={`${authInputClass} pr-10`}
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
+        </AuthField>
 
-          {diagnostic && <p className="text-sm text-yellow-600 bg-yellow-50 dark:bg-yellow-950 p-2 rounded">{diagnostic}</p>}
-          {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
 
-          <Button type="submit" disabled={loading} className="mt-2 w-full">
-            {loading ? 'Signing in…' : 'Sign in'}
-          </Button>
-        </form>
+        <Button
+          type="submit"
+          disabled={loading}
+          className="h-11 w-full rounded-full text-sm font-semibold shadow-soft transition-transform active:scale-[0.99]"
+        >
+          {loading ? 'Signing in…' : 'Sign in'}
+        </Button>
+      </form>
+    </AuthShell>
+  )
+}
 
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          <Link href="/auth/forgot-password" className="underline hover:text-foreground">
-            Forgot password?
-          </Link>
-        </p>
-      </div>
-    </div>
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+          Loading…
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   )
 }

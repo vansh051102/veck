@@ -1,23 +1,37 @@
 import { prisma } from '@/lib/db'
-import { buildOwnershipFilter } from '@/lib/rbac'
+import { buildOwnershipFilterAsync } from '@/lib/rbac'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 
-// Averages the Qualified -> Quote Sent gap across the org from the per-lead
-// stage-entry stamps (Lead.qualifiedAt / Lead.quoteSentAt, set once on first
-// entry to each stage). Bounded + indexed (orgId), so it stays cheap on the
-// dashboard path instead of scanning the whole audit log. Org-wide: the stamps
-// survive the lead moving past Quote Sent (e.g. to Closed Won).
+// Averages the Qualified -> Quote Sent gap across the org from STAGE_CHANGE
+// audit entries (lib/auth.ts logAudit, written by the stage-change route).
+// Org-wide rather than ownership-filtered: this is a pipeline-velocity
+// metric, not per-user data, and a lead's history survives it moving past
+// Quote Sent (e.g. to Order Confirmed), which a current-stage filter would miss.
 async function computeAvgQualifiedToQuoteSentHours(orgId: string): Promise<number | null> {
-  const leads = await prisma.lead.findMany({
-    where: { orgId, qualifiedAt: { not: null }, quoteSentAt: { not: null } },
-    select: { qualifiedAt: true, quoteSentAt: true },
+  const events = await prisma.auditLog.findMany({
+    where: { orgId, resourceType: 'Lead', action: 'STAGE_CHANGE' },
+    select: { resourceId: true, changes: true, timestamp: true },
+    orderBy: { timestamp: 'asc' },
   })
 
+  const enteredQualified = new Map<string, Date>()
+  const enteredQuoteSent = new Map<string, Date>()
+  for (const event of events) {
+    const changes = event.changes as { toStage?: string } | null
+    if (changes?.toStage === 'Qualified' && !enteredQualified.has(event.resourceId)) {
+      enteredQualified.set(event.resourceId, event.timestamp)
+    }
+    if (changes?.toStage === 'Quote Sent' && !enteredQuoteSent.has(event.resourceId)) {
+      enteredQuoteSent.set(event.resourceId, event.timestamp)
+    }
+  }
+
   const diffsHours: number[] = []
-  for (const lead of leads) {
-    if (!lead.qualifiedAt || !lead.quoteSentAt) continue
-    const hours = (lead.quoteSentAt.getTime() - lead.qualifiedAt.getTime()) / (1000 * 60 * 60)
+  for (const [leadId, quoteSentAt] of enteredQuoteSent) {
+    const qualifiedAt = enteredQualified.get(leadId)
+    if (!qualifiedAt) continue
+    const hours = (quoteSentAt.getTime() - qualifiedAt.getTime()) / (1000 * 60 * 60)
     if (hours >= 0) diffsHours.push(hours)
   }
 
@@ -52,8 +66,10 @@ export const GET = withErrorHandler(async (req: Request) => {
     }
   }
 
-  const ownershipFilter = buildOwnershipFilter(userId, role, department, 'leads')
+  const ownershipFilter = await buildOwnershipFilterAsync(userId, role, department, 'leads')
   const leadsWhere = { orgId, ...ownershipFilter }
+
+  const wonStages = ['Order Confirmed', 'Order Closed', 'Closed Won']
 
   const monthStart = new Date()
   monthStart.setDate(1)
@@ -67,7 +83,11 @@ export const GET = withErrorHandler(async (req: Request) => {
     prisma.lead.count({ where: { ...leadsWhere, status: 'open' } }),
     prisma.lead.count({ where: { ...leadsWhere, status: 'open', priority: { in: ['High', 'Urgent'] } } }),
     prisma.lead.count({
-      where: { ...leadsWhere, stage: 'Closed Won', stageChangedAt: { gte: monthStart } },
+      where: {
+        ...leadsWhere,
+        stage: { in: wonStages },
+        stageChangedAt: { gte: monthStart },
+      },
     }),
     prisma.lead.count({
       where: { ...leadsWhere, stage: 'Contacted', contactOutcome: 'connected' },
@@ -97,12 +117,18 @@ export const GET = withErrorHandler(async (req: Request) => {
   }
 
   if (role === 'sales_manager' || role === 'sales_executive' || role === 'sales_purchase') {
+    const activityOwnership = await buildOwnershipFilterAsync(
+      userId,
+      role,
+      department,
+      'activities'
+    )
     const [activitiesThisWeek, openLeadsForAging] = await Promise.all([
       prisma.activity.count({
         where: {
           orgId,
           createdAt: { gte: weekStart },
-          ...buildOwnershipFilter(userId, role, department, 'activities'),
+          ...activityOwnership,
         },
       }),
       prisma.lead.findMany({ where: { ...leadsWhere, status: 'open' }, select: { createdAt: true } }),

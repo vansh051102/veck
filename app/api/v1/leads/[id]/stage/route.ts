@@ -1,9 +1,13 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { assertTransitionAllowed, calculateSlaDeadline } from '@/lib/workflow'
-import { createSopChecklistsForStage } from '@/lib/sop-checklists'
+import {
+  assertRequiredChecklistsComplete,
+  createSopChecklistsForStage,
+} from '@/lib/sop-checklists'
 import { createFollowUpSchedule } from '@/lib/follow-up'
 import { UpdateLeadStageSchema } from '@/lib/validation'
+import { isWonStage, normalizeStageName, SALES_HANDOVER_ROLES } from '@/lib/lead-stages'
 import {
   successResponse,
   withErrorHandler,
@@ -26,7 +30,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     PERMISSIONS.LEADS_EDIT
   )
 
-  if (!await canAccessLead(ctx.userId, ctx.role, params.id)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, params.id))) {
     throw new NotFoundError('Lead')
   }
 
@@ -38,25 +42,61 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   if (!parsed.success) {
     throw new ValidationError('Invalid stage change request', parsed.error.flatten())
   }
-  const { stage: toStage, reason, reasonDetails, assignedToId, supplierMargin, quotationNumber, productCategory, quotationValue } = parsed.data
-  const fromStage = lead.stage
+  const {
+    stage: rawToStage,
+    reason,
+    reasonDetails,
+    assignedToId,
+    supplierMargin,
+    quotationNumber,
+    productCategory,
+    quotationValue,
+  } = parsed.data
+  const toStage = normalizeStageName(rawToStage)
+  const fromStage = normalizeStageName(lead.stage)
 
-  // Validates legality of transition + gating rules (activities, checklists, reason)
-  assertTransitionAllowed(lead, toStage, reason)
+  assertTransitionAllowed(lead, toStage, reason, ctx.role)
 
-  // Optional handover: assign as part of the transition (marketing → sales
-  // at Qualified). Assignee must be an active user in the same org.
-  let assignee: { id: string; fullName: string } | null = null
+  // Marketing → Sales handover required when entering Qualified
+  const isMarketing = ctx.role.startsWith('marketing')
+  if (isMarketing && toStage === 'Qualified' && !assignedToId) {
+    throw new ValidationError(
+      'Assign a Sales Executive when moving a lead to Qualified (marketing handover)'
+    )
+  }
+
+  await assertRequiredChecklistsComplete(prisma, lead.id, fromStage, toStage)
+
+  const orgStages = await prisma.settings.findUnique({
+    where: { orgId: ctx.orgId },
+    select: { workflowStages: true },
+  })
+  const { normalizeWorkflowStages } = await import('@/lib/workflow-stages')
+  const stages = normalizeWorkflowStages(orgStages?.workflowStages)
+  const stageDef = stages.find((s) => s.name === toStage)
+  const slaHours = stageDef?.slaHours
+
+  let assignee: { id: string; fullName: string; role: string } | null = null
   if (assignedToId) {
     assignee = await prisma.user.findFirst({
       where: { id: assignedToId, orgId: ctx.orgId, status: 'active' },
-      select: { id: true, fullName: true },
+      select: { id: true, fullName: true, role: true },
     })
     if (!assignee) throw new ValidationError('Assignee not found or inactive')
+    if (
+      isMarketing &&
+      toStage === 'Qualified' &&
+      !(SALES_HANDOVER_ROLES as readonly string[]).includes(assignee.role)
+    ) {
+      throw new ValidationError('Handover assignee must be a Sales role')
+    }
   }
 
   const now = new Date()
   const isLossPath = toStage === 'Deal Lost' || toStage === 'Disqualified'
+  const isWon = isWonStage(toStage)
+  const isOrderClosed = toStage === 'Order Closed'
+  const isReopen = !isLossPath && !isWon && !isOrderClosed
 
   const updated = await prisma.$transaction(async (tx) => {
     const result = await tx.lead.update({
@@ -66,7 +106,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
         stageChangedAt: now,
         stageChangedBy: ctx.userId,
         slaCreatedAt: now,
-        slaDeadline: calculateSlaDeadline(toStage, now),
+        slaDeadline: calculateSlaDeadline(toStage, now, slaHours),
         slaBreached: false,
         ...(isLossPath && {
           status: toStage === 'Deal Lost' ? 'closed_lost' : 'disqualified',
@@ -74,10 +114,9 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
           dealLostDetails: reasonDetails || null,
           dealLostDate: now,
         }),
-        ...(toStage === 'Closed Won' && { status: 'closed_won' }),
-        // Reopening: moving back to any non-terminal stage clears the loss
-        // record and reopens the lead (fixes stuck status='closed_lost').
-        ...(!isLossPath && toStage !== 'Closed Won' && {
+        ...(isWon && { status: 'closed_won' }),
+        ...(isOrderClosed && { status: 'closed_won' }),
+        ...(isReopen && {
           status: 'open',
           dealLostReason: null,
           dealLostDetails: null,
@@ -90,27 +129,26 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
           productCategory,
           quotationValue,
         }),
-        // Stage-entry stamps (set once) for pipeline-velocity metrics.
-        ...(toStage === 'Qualified' && !lead.qualifiedAt && { qualifiedAt: now }),
-        ...(toStage === 'Quote Sent' && !lead.quoteSentAt && { quoteSentAt: now }),
       },
     })
 
-    // Auto-create the SOP checklists for the stage being entered
-    await createSopChecklistsForStage(tx, lead.id, toStage)
+    await createSopChecklistsForStage(tx, lead.id, toStage, ctx.role)
 
-    // SOP Step 4: schedule the 6-day daily follow-up when a quote goes out
     if (toStage === 'Quote Sent') {
-      await createFollowUpSchedule(tx, { leadId: lead.id, orgId: ctx.orgId, createdBy: ctx.userId, from: now })
+      await createFollowUpSchedule(tx, {
+        leadId: lead.id,
+        orgId: ctx.orgId,
+        createdBy: ctx.userId,
+        from: now,
+      })
     }
 
     const timeline = await tx.timeline.upsert({
       where: { leadId: lead.id },
-      create: { orgId: ctx.orgId, leadId: lead.id },
+      create: { leadId: lead.id },
       update: {},
     })
 
-    // Loss events read like "Lead moved to Deal Lost. [Reason: … | Details: …]"
     const lossDescription = isLossPath
       ? `Lead moved to ${toStage}. [Reason: ${reason}${reasonDetails ? ` | Details: ${reasonDetails}` : ''}]`
       : reason

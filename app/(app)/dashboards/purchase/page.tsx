@@ -25,12 +25,9 @@ function PurchaseDashboardPageContent() {
   if (!stats) return null
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {viewAsUserId && <ViewAsBanner viewAsUserId={viewAsUserId} />}
-      <div>
-        <h1 className="text-2xl font-semibold">Purchase Dashboard</h1>
-        {me && <p className="text-sm text-muted-foreground mt-1">Welcome, {me.fullName}</p>}
-      </div>
+      {me && <p className="text-sm text-muted-foreground">Welcome, {me.fullName}</p>}
 
       <PurchaseSlaSection stats={stats} />
 

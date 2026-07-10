@@ -1,8 +1,6 @@
 import { prisma } from '@/lib/db'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
-import { PERMISSIONS } from '@/lib/rbac'
-import { rbacService } from '@/lib/services/rbac.service'
 
 // Resolves the ?days=7|30|90 / ?from=&to= query params (same convention as
 // the leads list filter) into a concrete [start, end) window. No params at
@@ -27,7 +25,6 @@ function resolveCallWindow(url: URL): { start?: Date; end: Date } {
 // everyone else gets exactly one row - their own (scope: "own").
 export const GET = withErrorHandler(async (req: Request) => {
   const ctx = await validateRequest(req)
-  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ANALYTICS_READ)
   const { orgId, userId } = ctx
   const role = ctx.role
   const isAdmin = role === 'admin'
@@ -53,77 +50,69 @@ export const GET = withErrorHandler(async (req: Request) => {
     createdAt: { ...(callStart && { gte: callStart }), lte: callEnd },
   }
 
-  const userIds = users.map((u) => u.id)
+  const stats = await Promise.all(
+    users.map(async (user) => {
+      const [assigned, open, won, wonThisMonth, slaBreached, activities, calls] = await Promise.all([
+        prisma.lead.count({ where: { orgId, assignedToId: user.id } }),
+        prisma.lead.count({ where: { orgId, assignedToId: user.id, status: 'open' } }),
+        prisma.lead.count({
+          where: {
+            orgId,
+            assignedToId: user.id,
+            stage: { in: ['Order Confirmed', 'Order Closed', 'Closed Won'] },
+          },
+        }),
+        prisma.lead.count({
+          where: {
+            orgId,
+            assignedToId: user.id,
+            stage: { in: ['Order Confirmed', 'Order Closed', 'Closed Won'] },
+            stageChangedAt: { gte: monthStart },
+          },
+        }),
+        prisma.lead.count({
+          where: { orgId, assignedToId: user.id, slaBreached: true, status: 'open' },
+        }),
+        prisma.activity.count({ where: { orgId, createdBy: user.id } }),
+        prisma.activity.findMany({
+          where: { ...callWhere, createdBy: user.id },
+          select: { createdAt: true, status: true, metadata: true },
+        }),
+      ])
 
-  // A fixed number of groupBy queries (independent of user count) replaces the
-  // previous 7-queries-per-user N+1. Call tallies come from a single fetch.
-  const [
-    assignedRows,
-    openRows,
-    wonRows,
-    wonThisMonthRows,
-    slaBreachedRows,
-    activityRows,
-    allCalls,
-  ] = await Promise.all([
-    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: userIds } }, _count: { _all: true } }),
-    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: userIds }, status: 'open' }, _count: { _all: true } }),
-    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: userIds }, stage: 'Closed Won' }, _count: { _all: true } }),
-    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: userIds }, stage: 'Closed Won', stageChangedAt: { gte: monthStart } }, _count: { _all: true } }),
-    prisma.lead.groupBy({ by: ['assignedToId'], where: { orgId, assignedToId: { in: userIds }, slaBreached: true, status: 'open' }, _count: { _all: true } }),
-    prisma.activity.groupBy({ by: ['createdBy'], where: { orgId, createdBy: { in: userIds } }, _count: { _all: true } }),
-    prisma.activity.findMany({
-      where: { ...callWhere, createdBy: { in: userIds } },
-      select: { createdBy: true, createdAt: true, status: true, metadata: true },
-    }),
-  ])
+      const connected = calls.filter(
+        (c) => c.status === 'completed' && (c.metadata as { outcome?: string } | null)?.outcome === 'connected'
+      ).length
+      const notReceived = calls.filter(
+        (c) =>
+          c.status === 'completed' && (c.metadata as { outcome?: string } | null)?.outcome !== 'connected'
+      ).length
 
-  const toMap = (rows: { assignedToId: string | null; _count: { _all: number } }[]) => {
-    const m = new Map<string, number>()
-    for (const r of rows) if (r.assignedToId) m.set(r.assignedToId, r._count._all)
-    return m
-  }
-  const assignedMap = toMap(assignedRows)
-  const openMap = toMap(openRows)
-  const wonMap = toMap(wonRows)
-  const wonThisMonthMap = toMap(wonThisMonthRows)
-  const slaBreachedMap = toMap(slaBreachedRows)
-  const activityMap = new Map<string, number>()
-  for (const r of activityRows) if (r.createdBy) activityMap.set(r.createdBy, r._count._all)
-
-  interface CallTally { total: number; connected: number; notReceived: number }
-  const callTally = new Map<string, CallTally>()
-  for (const call of allCalls) {
-    const t = callTally.get(call.createdBy) ?? { total: 0, connected: 0, notReceived: 0 }
-    t.total += 1
-    if (call.status === 'completed') {
-      const outcome = (call.metadata as { outcome?: string } | null)?.outcome
-      if (outcome === 'connected') t.connected += 1
-      else t.notReceived += 1
-    }
-    callTally.set(call.createdBy, t)
-  }
-
-  const stats = users.map((user) => {
-    const assigned = assignedMap.get(user.id) ?? 0
-    const won = wonMap.get(user.id) ?? 0
-    const calls = callTally.get(user.id) ?? { total: 0, connected: 0, notReceived: 0 }
-    return {
-      userId: user.id,
-      name: user.fullName,
-      role: user.role,
-      leadsAssigned: assigned,
-      openLeads: openMap.get(user.id) ?? 0,
-      leadsWon: won,
-      wonThisMonth: wonThisMonthMap.get(user.id) ?? 0,
-      slaBreached: slaBreachedMap.get(user.id) ?? 0,
-      conversionRate: assigned > 0 ? Math.round((won / assigned) * 100) : 0,
-      activitiesLogged: activityMap.get(user.id) ?? 0,
-      calls,
-    }
-  })
+      return {
+        userId: user.id,
+        name: user.fullName,
+        role: user.role,
+        leadsAssigned: assigned,
+        openLeads: open,
+        leadsWon: won,
+        wonThisMonth,
+        slaBreached,
+        conversionRate: assigned > 0 ? Math.round((won / assigned) * 100) : 0,
+        activitiesLogged: activities,
+        calls: {
+          total: calls.length,
+          connected,
+          notReceived,
+        },
+      }
+    })
+  )
 
   // Per-day call breakdown across whichever users are in scope (own or team).
+  const allCalls = await prisma.activity.findMany({
+    where: { ...callWhere, createdBy: { in: users.map((u) => u.id) } },
+    select: { createdAt: true, status: true, metadata: true },
+  })
   const byDay: Record<string, { total: number; connected: number; notReceived: number }> = {}
   for (const call of allCalls) {
     const day = call.createdAt.toISOString().slice(0, 10)

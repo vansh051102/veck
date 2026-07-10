@@ -1,40 +1,68 @@
-import { SOP_CHECKLISTS_BY_STAGE } from '../sop-checklists'
+import {
+  SOP_CHECKLISTS_BY_STAGE,
+  SALES_SOP_CHECKLISTS,
+  MARKETING_SOP_CHECKLISTS,
+  PURCHASE_SOP_CHECKLISTS,
+  getSopChecklistsForStage,
+  sopTrackForRole,
+} from '../sop-checklists'
 import { DEAL_LOST_REASONS, isValidDealLostReason } from '../lead-stages'
 
 describe('SOP checklist templates', () => {
-  it('defines templates for every active stage', () => {
-    expect(Object.keys(SOP_CHECKLISTS_BY_STAGE)).toEqual([
-      'New Lead',
-      'Contacted',
-      'Qualified',
-      'Quote Sent',
-    ])
+  it('default map is the sales SOP', () => {
+    expect(SOP_CHECKLISTS_BY_STAGE).toBe(SALES_SOP_CHECKLISTS)
   })
 
-  it('matches SOP item counts (4+4 / 22+5 / 17 / 10)', () => {
-    const counts = Object.fromEntries(
-      Object.entries(SOP_CHECKLISTS_BY_STAGE).map(([stage, templates]) => [
-        stage,
-        templates.map((t) => t.items.length),
+  it('sales defines New Lead through Order Confirmed', () => {
+    expect(Object.keys(SALES_SOP_CHECKLISTS)).toEqual(
+      expect.arrayContaining([
+        'New Lead',
+        'Contacted',
+        'Qualified',
+        'Quote Sent',
+        'Order Confirmed',
       ])
     )
-    expect(counts).toEqual({
-      'New Lead': [4, 4],
-      Contacted: [22, 5],
-      Qualified: [17],
-      'Quote Sent': [10],
-    })
+  })
+
+  it('marketing has lighter New Lead / Contacted / Qualified sets', () => {
+    expect(MARKETING_SOP_CHECKLISTS['New Lead'][0].items).toHaveLength(6)
+    expect(MARKETING_SOP_CHECKLISTS.Contacted[0].items.length).toBeGreaterThanOrEqual(10)
+    expect(MARKETING_SOP_CHECKLISTS.Qualified[0].title).toMatch(/Handover/)
+  })
+
+  it('purchase has Order Confirmed procurement checklists', () => {
+    expect(PURCHASE_SOP_CHECKLISTS['Order Confirmed'].length).toBeGreaterThanOrEqual(3)
+    expect(PURCHASE_SOP_CHECKLISTS['Order Confirmed'][0].items).toEqual(
+      expect.arrayContaining(['3 Vendor Comparison Completed', 'PO Generated Same Day'])
+    )
+  })
+
+  it('selects track by role', () => {
+    expect(sopTrackForRole('marketing_executive')).toBe('marketing')
+    expect(sopTrackForRole('purchase')).toBe('purchase')
+    expect(sopTrackForRole('sales_executive')).toBe('sales')
+    expect(getSopChecklistsForStage('New Lead', 'marketing_manager')[0].title).toBe(
+      'New Lead Checklist'
+    )
+    expect(getSopChecklistsForStage('New Lead', 'sales_executive')[0].title).toBe(
+      'New Lead Registration Checklist'
+    )
   })
 
   it('gating stages have required checklists; Quote Sent does not block the loss path', () => {
-    expect(SOP_CHECKLISTS_BY_STAGE['New Lead'].some((t) => t.isRequired)).toBe(true)
-    expect(SOP_CHECKLISTS_BY_STAGE['Contacted'].every((t) => t.isRequired)).toBe(true)
-    expect(SOP_CHECKLISTS_BY_STAGE['Qualified'].every((t) => t.isRequired)).toBe(true)
-    expect(SOP_CHECKLISTS_BY_STAGE['Quote Sent'].every((t) => !t.isRequired)).toBe(true)
+    expect(SALES_SOP_CHECKLISTS['New Lead'].some((t) => t.isRequired)).toBe(true)
+    expect(SALES_SOP_CHECKLISTS['Contacted'].every((t) => t.isRequired)).toBe(true)
+    expect(SALES_SOP_CHECKLISTS['Qualified'].every((t) => t.isRequired)).toBe(true)
+    expect(SALES_SOP_CHECKLISTS['Quote Sent'].every((t) => !t.isRequired)).toBe(true)
   })
 
   it('has no duplicate item titles within a checklist', () => {
-    for (const templates of Object.values(SOP_CHECKLISTS_BY_STAGE)) {
+    for (const templates of [
+      ...Object.values(SALES_SOP_CHECKLISTS),
+      ...Object.values(MARKETING_SOP_CHECKLISTS),
+      ...Object.values(PURCHASE_SOP_CHECKLISTS),
+    ]) {
       for (const t of templates) {
         expect(new Set(t.items).size).toBe(t.items.length)
       }

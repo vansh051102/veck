@@ -77,11 +77,24 @@ export async function pickAssignee(
   const settings = await tx.settings.findUnique({ where: { orgId } })
   if (!settings?.autoAssignmentEnabled) return null
 
-  const users = await tx.user.findMany({
-    where: { orgId, status: 'active' },
+  // Prefer Marketing assignees for new-lead intake; fall back to all active non-admin users
+  let users = await tx.user.findMany({
+    where: {
+      orgId,
+      status: 'active',
+      department: 'Marketing',
+      role: { not: 'admin' },
+    },
     select: { id: true, fullName: true },
     orderBy: { fullName: 'asc' },
   })
+  if (users.length === 0) {
+    users = await tx.user.findMany({
+      where: { orgId, status: 'active', role: { not: 'admin' } },
+      select: { id: true, fullName: true },
+      orderBy: { fullName: 'asc' },
+    })
+  }
   if (users.length === 0) return null
 
   const rule = (settings.autoAssignmentRule as { rule_type?: string } | null)?.rule_type

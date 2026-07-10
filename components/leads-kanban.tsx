@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
-import { otherStages } from '@/lib/lead-stages'
+import { otherStages, visibleStagesForRole } from '@/lib/lead-stages'
 import { LEAD_STAGES } from '@/lib/validation'
+import { useCurrentUser } from '@/lib/use-current-user'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
 import { PRIORITY_VARIANT, type LeadRow } from '@/components/leads-table'
@@ -18,11 +19,16 @@ interface LeadsKanbanProps {
 export function LeadsKanban({ data, onChanged }: LeadsKanbanProps) {
   const router = useRouter()
   const { toast } = useToast()
+  const me = useCurrentUser()
   const [busyId, setBusyId] = useState<string | null>(null)
+  const columns = me ? visibleStagesForRole(me.role) : [...LEAD_STAGES]
 
   const byStage = new Map<string, LeadRow[]>()
-  for (const stage of LEAD_STAGES) byStage.set(stage, [])
-  for (const lead of data) byStage.get(lead.stage)?.push(lead)
+  for (const stage of columns) byStage.set(stage, [])
+  for (const lead of data) {
+    const stage = lead.stage === 'Closed Won' ? 'Order Confirmed' : lead.stage
+    byStage.get(stage)?.push(lead)
+  }
 
   async function moveStage(lead: LeadRow, stage: string) {
     setBusyId(lead.id)
@@ -39,7 +45,7 @@ export function LeadsKanban({ data, onChanged }: LeadsKanbanProps) {
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-2">
-      {LEAD_STAGES.map((stage) => {
+      {columns.map((stage) => {
         const leads = byStage.get(stage) || []
         return (
           <div key={stage} className="w-64 shrink-0 rounded-lg border border-border bg-muted/50">
@@ -49,9 +55,11 @@ export function LeadsKanban({ data, onChanged }: LeadsKanbanProps) {
             </div>
             <div className="flex min-h-[80px] flex-col gap-2 p-2">
               {leads.map((lead) => {
-                // Any other stage is reachable; loss-path needs a reason (detail page)
                 const moves = otherStages(lead.stage).filter(
-                  (s) => s !== 'Deal Lost' && s !== 'Disqualified'
+                  (s) =>
+                    s !== 'Deal Lost' &&
+                    s !== 'Disqualified' &&
+                    columns.includes(s)
                 )
                 return (
                   <div key={lead.id} className="rounded-md border border-border bg-card p-2 text-sm">

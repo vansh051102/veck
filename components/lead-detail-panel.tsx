@@ -4,16 +4,14 @@ import { useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { api, ApiError } from '@/lib/api-client'
 import { useHasPermission } from '@/lib/use-current-user'
-import { otherStages } from '@/lib/lead-stages'
 import { LEAD_PRIORITIES } from '@/lib/validation'
 import { formatDate, isSlaOverdue } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Modal } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 import { LeadAssignControl } from '@/components/lead-assign-control'
 import { LeadQuotes } from '@/components/lead-quotes'
-import { LeadStageReasonModal } from '@/components/lead-stage-reason-modal'
+import { LeadStageControl } from '@/components/lead-stage-control'
 import { LeadActivityTab, type LeadActivity } from '@/components/log-activity-forms'
 import { LeadDocuments } from '@/components/lead-documents'
 import { LeadTimeline, type TimelineEvent } from '@/components/lead-timeline'
@@ -70,6 +68,8 @@ const STAGE_BADGE: Record<string, 'default' | 'primary' | 'success' | 'warning' 
   Contacted: 'primary',
   Qualified: 'primary',
   'Quote Sent': 'warning',
+  'Order Confirmed': 'success',
+  'Order Closed': 'success',
   'Closed Won': 'success',
   'Deal Lost': 'destructive',
   Disqualified: 'destructive',
@@ -101,18 +101,7 @@ export function LeadDetailPanel({
   const [subTab, setSubTab] = useState<SubTab>(initialTab)
   const [requirement, setRequirement] = useState(lead.requirement ?? '')
   const [savingReq, setSavingReq] = useState(false)
-  const [lossStage, setLossStage] = useState<'Deal Lost' | 'Disqualified' | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  // Quote Sent popup state
-  const [showQuotePopup, setShowQuotePopup] = useState(false)
-  const [quoteLoading, setQuoteLoading] = useState(false)
-  const [quoteError, setQuoteError] = useState<string | null>(null)
-  const [quoteConfirm, setQuoteConfirm] = useState(false)
-  const [supplierMargin, setSupplierMargin] = useState('')
-  const [quotationNumber, setQuotationNumber] = useState('')
-  const [productCategory, setProductCategory] = useState('')
-  const [quotationValue, setQuotationValue] = useState('')
 
   const calls = useMemo(
     () =>
@@ -141,68 +130,6 @@ export function LeadDetailPanel({
       onChanged()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Update failed')
-    }
-  }
-
-  async function changeStage(next: string) {
-    if (next === 'Deal Lost' || next === 'Disqualified') {
-      setLossStage(next)
-      return
-    }
-    if (next === 'Quote Sent') {
-      setQuoteError(null)
-      setQuoteConfirm(false)
-      setSupplierMargin('')
-      setQuotationNumber('')
-      setProductCategory('')
-      setQuotationValue('')
-      setShowQuotePopup(true)
-      return
-    }
-    setError(null)
-    try {
-      await api.put(`/leads/${lead.id}/stage`, { stage: next })
-      toast(`Moved to ${next}`)
-      onChanged()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to change stage')
-    }
-  }
-
-  async function submitQuoteSent() {
-    if (!supplierMargin || !quotationNumber.trim() || !productCategory.trim() || !quotationValue) {
-      setQuoteError('All fields are required')
-      return
-    }
-    if (Number(supplierMargin) < 0 || Number(supplierMargin) > 100) {
-      setQuoteError('Supplier margin must be between 0 and 100')
-      return
-    }
-    if (Number(quotationValue) <= 0) {
-      setQuoteError('Quotation value must be positive')
-      return
-    }
-    if (!quoteConfirm) {
-      setQuoteError('Please confirm the details by checking the box')
-      return
-    }
-    setQuoteError(null)
-    setQuoteLoading(true)
-    try {
-      await api.put(`/leads/${lead.id}/stage`, {
-        stage: 'Quote Sent',
-        supplierMargin: Number(supplierMargin),
-        quotationNumber: quotationNumber.trim(),
-        productCategory: productCategory.trim(),
-        quotationValue: Number(quotationValue),
-      })
-      setShowQuotePopup(false)
-      toast('Moved to Quote Sent')
-      onChanged()
-    } catch (err) {
-      setQuoteError(err instanceof ApiError ? err.message : 'Failed to change stage')
-    } finally {
-      setQuoteLoading(false)
     }
   }
 
@@ -267,29 +194,20 @@ export function LeadDetailPanel({
             ))}
           </select>
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="col-span-2 flex flex-col gap-1 sm:col-span-2">
           <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             Stage
           </span>
-          {canEdit ? (
-            <select
-              aria-label="Stage"
-              value={lead.stage}
-              onChange={(e) => changeStage(e.target.value)}
-              className={controlClass}
-            >
-              <option value={lead.stage}>{lead.stage}</option>
-              {otherStages(lead.stage).map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="flex h-9 items-center">
-              <Badge variant={STAGE_BADGE[lead.stage] ?? 'default'}>{lead.stage}</Badge>
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={STAGE_BADGE[lead.stage] ?? 'default'}>{lead.stage}</Badge>
+            {canEdit && (
+              <LeadStageControl
+                leadId={lead.id}
+                currentStage={lead.stage}
+                onChanged={onChanged}
+              />
+            )}
+          </div>
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -455,97 +373,6 @@ export function LeadDetailPanel({
         )}
       </div>
 
-      {lossStage && (
-        <LeadStageReasonModal
-          leadId={lead.id}
-          targetStage={lossStage}
-          onClose={() => setLossStage(null)}
-          onDone={onChanged}
-        />
-      )}
-
-      {showQuotePopup && (
-        <Modal title="Quote Details" onClose={() => setShowQuotePopup(false)}>
-          <div className="flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground">
-              Enter the quotation details before moving to Quote Sent. These fields are locked after submission.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium">
-                  Supplier Margin (%) <span className="text-destructive">*</span>
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  value={supplierMargin}
-                  onChange={(e) => setSupplierMargin(e.target.value)}
-                  placeholder="e.g. 15"
-                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium">
-                  Quotation Number <span className="text-destructive">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={quotationNumber}
-                  onChange={(e) => setQuotationNumber(e.target.value)}
-                  placeholder="e.g. QT-2026-001"
-                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium">
-                  Product Category <span className="text-destructive">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={productCategory}
-                  onChange={(e) => setProductCategory(e.target.value)}
-                  placeholder="e.g. Industrial Equipment"
-                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium">
-                  Quotation Value (₹) <span className="text-destructive">*</span>
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={quotationValue}
-                  onChange={(e) => setQuotationValue(e.target.value)}
-                  placeholder="e.g. 125000"
-                  className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={quoteConfirm}
-                onChange={(e) => setQuoteConfirm(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              I confirm these details are correct. This action cannot be undone.
-            </label>
-            {quoteError && <p className="text-sm text-destructive">{quoteError}</p>}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowQuotePopup(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" disabled={quoteLoading} onClick={submitQuoteSent}>
-                {quoteLoading ? 'Moving…' : 'Confirm & Move to Quote Sent'}
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   )
 }

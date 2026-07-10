@@ -5,79 +5,146 @@ import {
   isTerminalStage,
   isValidReason,
   reasonsForStage,
+  normalizeStageName,
+  LEGACY_CLOSED_WON,
 } from './lead-stages'
 
 export { TERMINAL_STAGES, isTerminalStage }
 
-// ============================================================================
-// LEAD WORKFLOW STATE MACHINE
-// ============================================================================
-// Stage movement is unrestricted: anyone with access to a lead (see
-// canAccessLead in lib/rbac.ts) can move it to any other stage, in any
-// order, including reopening a terminal one — there is no required
-// sequence and no minimum-activity/checklist gate. The only structural
-// requirement left is a valid SOP reason when landing on Deal Lost or
-// Disqualified, since that's data capture (loss analytics) rather than
-// an access restriction.
-
-// SLA windows applied to the *new* stage the lead is entering.
-const SLA_WINDOW_MS: Record<string, number | null> = {
-  'New Lead': 60 * 60 * 1000, // 1 hour
-  Contacted: 24 * 60 * 60 * 1000, // 24 hours
-  Qualified: 3 * 60 * 60 * 1000, // 3 hours
-  'Quote Sent': 6 * 24 * 60 * 60 * 1000, // 6 days
-  'Closed Won': null,
+// Default SLA windows (hours) — overridden when org workflowStages include slaHours
+const DEFAULT_SLA_HOURS: Record<string, number | null> = {
+  'New Lead': 1,
+  Contacted: 24,
+  Qualified: 3,
+  'Quote Sent': 144,
+  'Order Confirmed': 72,
+  'Order Closed': null,
   'Deal Lost': null,
   Disqualified: null,
+  [LEGACY_CLOSED_WON]: null,
 }
 
+// Purchase-owned quote handoff
+const PURCHASE_QUOTE_TRANSITIONS = new Set(['Qualified→Quote Sent', 'Quote Sent→Qualified'])
+
+const PURCHASE_ALLOWED_STAGES = new Set([
+  'Qualified',
+  'Quote Sent',
+  'Order Confirmed',
+  'Order Closed',
+  'Deal Lost',
+  'Disqualified',
+])
+
 export function isValidTransition(fromStage: string, toStage: string): boolean {
-  if (!(ALL_STAGES as readonly string[]).includes(fromStage)) {
+  const from = normalizeStageName(fromStage)
+  const to = normalizeStageName(toStage)
+  const known = ALL_STAGES as readonly string[]
+  if (!known.includes(from) && fromStage !== LEGACY_CLOSED_WON) {
     throw new ValidationError(`Unknown stage: ${fromStage}`)
   }
-  if (!(ALL_STAGES as readonly string[]).includes(toStage)) {
+  if (!known.includes(to)) {
     throw new ValidationError(`Unknown stage: ${toStage}`)
   }
-  return fromStage !== toStage
+  return from !== to
 }
 
 /**
- * Validates that a stage transition is structurally legal (different,
- * known stages) and that a valid reason is supplied for the loss path.
- * Throws ValidationError / ConflictError if the transition should be blocked.
+ * Role-aware transition check.
+ * - Purchase: quote handoff + post-order stages; can close from Quote Sent / Order Confirmed
+ * - Sales/marketing: cannot Qualified → Quote Sent (purchase owns pricing handoff)
+ * - Marketing: cannot enter Quote Sent / Order Confirmed / Order Closed
  */
+export function assertRoleCanTransition(role: string, fromStage: string, toStage: string): void {
+  const from = normalizeStageName(fromStage)
+  const to = normalizeStageName(toStage)
+  const key = `${from}→${to}`
+
+  if (role === 'admin') return
+
+  if (role === 'purchase') {
+    if (PURCHASE_QUOTE_TRANSITIONS.has(key)) return
+    if (from === 'Quote Sent' && ['Order Confirmed', 'Deal Lost', 'Disqualified'].includes(to)) {
+      return
+    }
+    if (from === 'Order Confirmed' && ['Order Closed', 'Deal Lost'].includes(to)) return
+    if (from === 'Order Closed' && to === 'Order Confirmed') return // reopen
+    if (PURCHASE_ALLOWED_STAGES.has(from) && PURCHASE_ALLOWED_STAGES.has(to) && from !== to) {
+      // Allow purchase to move within their visible funnel when needed
+      if (
+        (from === 'Qualified' || from === 'Quote Sent' || from === 'Order Confirmed') &&
+        (to === 'Deal Lost' || to === 'Disqualified')
+      ) {
+        return
+      }
+    }
+    throw new ValidationError(
+      'Purchase can transition Qualified ↔ Quote Sent, confirm orders, close procurement, or mark loss from those stages'
+    )
+  }
+
+  if (role === 'sales_purchase') return
+
+  if (role.startsWith('marketing')) {
+    if (['Quote Sent', 'Order Confirmed', 'Order Closed'].includes(to)) {
+      throw new ValidationError(
+        'Marketing cannot move leads past Qualified — assign to Sales at Qualified'
+      )
+    }
+  }
+
+  if (
+    (role.startsWith('sales') || role.startsWith('marketing')) &&
+    from === 'Qualified' &&
+    to === 'Quote Sent'
+  ) {
+    throw new ValidationError('Only Purchase can move a lead from Qualified to Quote Sent')
+  }
+}
+
 export function assertTransitionAllowed(
   lead: { stage: string },
   toStage: string,
-  reason?: string
+  reason?: string,
+  role?: string
 ): void {
-  const fromStage = lead.stage
+  const fromStage = normalizeStageName(lead.stage)
+  const to = normalizeStageName(toStage)
 
-  if (!isValidTransition(fromStage, toStage)) {
+  if (!isValidTransition(fromStage, to)) {
     throw new ConflictError(`Lead is already in stage "${fromStage}"`)
   }
 
-  const isLossPath = toStage === 'Deal Lost' || toStage === 'Disqualified'
+  if (role) {
+    assertRoleCanTransition(role, fromStage, to)
+  }
+
+  const isLossPath = to === 'Deal Lost' || to === 'Disqualified'
 
   if (isLossPath) {
     if (!reason || reason.trim().length === 0) {
-      throw new ValidationError(`A reason is required when moving a lead to "${toStage}"`)
+      throw new ValidationError(`A reason is required when moving a lead to "${to}"`)
     }
-    if (!isValidReason(toStage, reason)) {
+    if (!isValidReason(to, reason)) {
       throw new ValidationError(
-        `Invalid reason "${reason}". Valid reasons: ${reasonsForStage(toStage).join(', ')}`
+        `Invalid reason "${reason}". Valid reasons: ${reasonsForStage(to).join(', ')}`
       )
     }
   }
 }
 
-export function calculateSlaDeadline(stage: string, from: Date = new Date()): Date {
-  const windowMs = SLA_WINDOW_MS[stage]
-  // Terminal / unrecognized stages get a far-future deadline so they never breach.
-  if (windowMs === null || windowMs === undefined) {
+export function calculateSlaDeadline(
+  stage: string,
+  from: Date = new Date(),
+  slaHoursOverride?: number | null
+): Date {
+  const normalized = normalizeStageName(stage)
+  const hours =
+    slaHoursOverride !== undefined ? slaHoursOverride : DEFAULT_SLA_HOURS[normalized]
+  if (hours === null || hours === undefined) {
     return new Date(from.getTime() + 365 * 24 * 60 * 60 * 1000)
   }
-  return new Date(from.getTime() + windowMs)
+  return new Date(from.getTime() + hours * 60 * 60 * 1000)
 }
 
 export function isSlaBreached(slaDeadline: Date, now: Date = new Date()): boolean {

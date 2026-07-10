@@ -9,8 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 
-const inputClass =
-  'h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary'
+const inputClass = 'crm-input'
 
 export default function ProfilePage() {
   const me = useCurrentUser()
@@ -90,10 +89,10 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="flex max-w-xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold">My Profile</h1>
+    <div className="mx-auto flex max-w-xl flex-col gap-4">
+      <p className="text-sm text-muted-foreground">Manage your account details for this workspace.</p>
 
-      <Card>
+      <Card className="shadow-soft">
         <CardHeader>
           <CardTitle>Full Name</CardTitle>
         </CardHeader>

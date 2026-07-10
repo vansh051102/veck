@@ -2,60 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
+/* veck — Locarda navy × Stripe/Apple */
+
 :root {
-  color-scheme: light;
-  /* Tinted off-white page so white cards lift off the surface. */
-  --background: 220 33% 98%;
-  --foreground: 222 20% 12%;
+  --background: 210 33% 99%; /* Arctic White #FBFCFE */
+  --foreground: 210 28% 18%; /* Slate Charcoal #1F2D3D */
   --card: 0 0% 100%;
-  --card-foreground: 222 20% 12%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 20% 12%;
-  --border: 220 14% 91%;
-  --input: 220 14% 91%;
-  --ring: 222 68% 52%;
-  --muted: 220 16% 95%;
-  --muted-foreground: 220 9% 40%;
-  --secondary: 220 16% 95%;
-  --secondary-foreground: 222 20% 12%;
-  --accent: 220 16% 95%;
-  --accent-foreground: 222 20% 12%;
-  /* Desaturated blue — considered, not the default "AI blue". */
-  --primary: 222 68% 52%;
+  --card-foreground: 210 28% 18%;
+  --border: 214 22% 91%; /* Cloud Gray #E3E8EF */
+  --muted: 210 40% 96%; /* Sky Mist-ish */
+  --muted-foreground: 215 16% 47%;
+  --primary: 206 79% 28%; /* Refined Navy #0F4C81 */
   --primary-foreground: 0 0% 100%;
+  --accent: 212 68% 54%; /* Pacific Edge #3C82D9 */
+  --accent-foreground: 0 0% 100%;
+  --highlight: 207 85% 61%; /* Electric Azure #4BA4F0 */
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  --success: 152 60% 36%;
-  --success-foreground: 0 0% 100%;
-  --warning: 35 92% 42%;
-  --warning-foreground: 0 0% 100%;
+  --ring: 212 68% 54%;
+  --radius: 0.5rem;
 }
 
 .dark {
-  color-scheme: dark;
-  --background: 222 24% 8%;
+  --background: 222 24% 13%;
   --foreground: 210 20% 96%;
-  --card: 222 22% 11%;
+  --card: 222 22% 16%;
   --card-foreground: 210 20% 96%;
-  --popover: 222 22% 11%;
-  --popover-foreground: 210 20% 96%;
-  --border: 220 15% 20%;
-  --input: 220 15% 24%;
-  --ring: 217 70% 58%;
-  --muted: 220 15% 16%;
-  --muted-foreground: 220 12% 62%;
-  --secondary: 220 15% 16%;
-  --secondary-foreground: 210 20% 96%;
-  --accent: 220 15% 18%;
-  --accent-foreground: 210 20% 96%;
-  --primary: 217 70% 58%;
-  --primary-foreground: 222 24% 8%;
+  --border: 217 18% 28%;
+  --muted: 220 18% 20%;
+  --muted-foreground: 215 14% 65%;
+  --primary: 207 85% 61%;
+  --primary-foreground: 222 24% 10%;
+  --accent: 212 68% 54%;
+  --accent-foreground: 0 0% 100%;
+  --highlight: 207 85% 61%;
   --destructive: 0 63% 55%;
   --destructive-foreground: 0 0% 100%;
-  --success: 152 55% 45%;
-  --success-foreground: 222 24% 8%;
-  --warning: 35 90% 55%;
-  --warning-foreground: 222 24% 8%;
+  --ring: 207 85% 61%;
 }
 
 * {
@@ -65,21 +48,9 @@
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  /* Tabular figures — counts, currency and SLA numbers align in columns. */
-  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'ss01' on, 'cv11' on;
 }
 
-/* Headings feel intentional: tighter tracking, no orphaned last words. */
-h1, h2, h3, h4 {
-  letter-spacing: -0.012em;
-  text-wrap: balance;
-}
-
-p {
-  text-wrap: pretty;
-}
-
-/* Slide-over drawer entrance */
 @keyframes slide-in-right {
   from {
     transform: translateX(100%);
@@ -90,5 +61,98 @@ p {
 }
 
 .animate-slide-in-right {
-  animation: slide-in-right 0.2s ease-out;
+  animation: slide-in-right 0.18s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
+}
+
+@keyframes auth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-enter {
+  animation: auth-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-enter-delay-1 {
+  animation: auth-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both;
+}
+
+.auth-enter-delay-2 {
+  animation: auth-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
+}
+
+.auth-enter-delay-3 {
+  animation: auth-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.18s both;
+}
+
+.auth-enter-delay-4 {
+  animation: auth-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.24s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-enter,
+  .auth-enter-delay-1,
+  .auth-enter-delay-2,
+  .auth-enter-delay-3,
+  .auth-enter-delay-4 {
+    animation: none;
+  }
+}
+
+@layer components {
+  /* Dense CRM chrome — consumes existing veck color tokens */
+  .crm-input {
+    @apply h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring;
+  }
+
+  .crm-chip {
+    @apply inline-flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors;
+  }
+
+  .crm-chip-active {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  .crm-chip-idle {
+    @apply text-muted-foreground hover:bg-muted hover:text-foreground;
+  }
+
+  .crm-stage-tab {
+    @apply whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors;
+  }
+
+  .crm-stage-tab-active {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  .crm-stage-tab-idle {
+    @apply text-muted-foreground hover:bg-muted hover:text-foreground;
+  }
+
+  .crm-icon-btn {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground;
+  }
+
+  .crm-table-cell {
+    @apply px-3 py-2.5 align-top text-sm;
+  }
 }

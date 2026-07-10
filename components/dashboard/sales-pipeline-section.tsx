@@ -2,7 +2,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { DashboardStats } from './types'
 
-const SALES_STAGES = ['New Lead', 'Contacted', 'Qualified', 'Quote Sent', 'Closed Won', 'Deal Lost']
+const SALES_STAGES = [
+  'New Lead',
+  'Contacted',
+  'Qualified',
+  'Quote Sent',
+  'Order Confirmed',
+  'Order Closed',
+  'Deal Lost',
+]
 
 export function SalesPipelineSection({ stats }: { stats: DashboardStats }) {
   const aging = stats.dealAgingBuckets

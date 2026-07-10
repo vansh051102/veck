@@ -1,27 +1,34 @@
 'use client'
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useEscapeKey } from '@/lib/use-escape-key'
 
 interface ModalProps {
   title: string
   onClose: () => void
   children: React.ReactNode
+  open?: boolean
 }
 
-export function Modal({ title, onClose, children }: ModalProps) {
+export function Modal({ title, onClose, children, open = true }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // Shared LIFO stack: a modal opened over the drawer closes alone on Escape.
-  useEscapeKey(onClose)
+  useEffect(() => {
+    if (!open) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose, open])
+
+  if (!open) return null
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-16 sm:pt-24"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-16 sm:pt-24 animate-fade-in"
       onMouseDown={(e) => {
-        // Click-outside-to-close: only when the press starts on the backdrop
         if (!panelRef.current?.contains(e.target as Node)) onClose()
       }}
     >
@@ -30,7 +37,7 @@ export function Modal({ title, onClose, children }: ModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-lg rounded-lg border border-border bg-card shadow-lg"
+        className="w-full max-w-lg rounded-lg border border-border bg-card shadow-modal"
       >
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-base font-semibold">{title}</h2>

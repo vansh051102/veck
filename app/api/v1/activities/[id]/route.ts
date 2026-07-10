@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { UpdateActivitySchema } from '@/lib/validation'
-import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
@@ -10,16 +10,18 @@ interface Params {
   params: { id: string }
 }
 
-// PUT /api/v1/activities/:id - Update an activity
+// PUT /api/v1/activities/:id
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
   const { orgId, userId } = ctx
-  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ACTIVITIES_EDIT)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.ACTIVITIES_EDIT
+  )
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')
-
-  if (!await canAccessLead(ctx.userId, ctx.role, existing.leadId)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, existing.leadId))) {
     throw new NotFoundError('Activity')
   }
 
@@ -44,16 +46,18 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   return successResponse(activity)
 })
 
-// DELETE /api/v1/activities/:id - Delete an activity
+// DELETE /api/v1/activities/:id
 export const DELETE = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
   const { orgId, userId } = ctx
-  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.ACTIVITIES_DELETE)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.ACTIVITIES_DELETE
+  )
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')
-
-  if (!await canAccessLead(ctx.userId, ctx.role, existing.leadId)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, existing.leadId))) {
     throw new NotFoundError('Activity')
   }
 

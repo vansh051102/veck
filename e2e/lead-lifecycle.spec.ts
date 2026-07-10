@@ -87,9 +87,9 @@ test.describe('lead lifecycle', () => {
     await page.getByRole('button', { name: 'Create quote' }).click()
     await expect(page.getByText(/QT-\d{4}-\d+/)).toBeVisible({ timeout: 10_000 })
 
-    // --- Qualified → Quote Sent → Closed Won ---
+    // --- Qualified → Quote Sent → Order Confirmed → Order Closed ---
     await moveStage(page, 'Quote Sent')
-    await moveStage(page, 'Closed Won')
-    await expect(page.getByText('Terminal stage — no further transitions')).toBeVisible()
+    await moveStage(page, 'Order Confirmed')
+    await moveStage(page, 'Order Closed')
   })
 })

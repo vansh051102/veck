@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { PermissionGate } from '@/components/permission-gate'
+import { MetricCard } from '@/components/ui/metric-card'
 import { RecentActivityCard } from '@/components/analytics/recent-activity-card'
 import { QuickActionsCard } from '@/components/analytics/quick-actions-card'
 
@@ -47,7 +47,8 @@ const STAGE_ORDER = [
   'Contacted',
   'Qualified',
   'Quote Sent',
-  'Closed Won',
+  'Order Confirmed',
+  'Order Closed',
   'Deal Lost',
   'Disqualified',
 ]
@@ -63,14 +64,6 @@ const ACTIVITY_COLORS: Record<string, string> = {
 const ACTIVITY_TYPES = ['call', 'email', 'note', 'meeting', 'task'] as const
 
 export default function AnalyticsPage() {
-  return (
-    <PermissionGate permission="analytics:read">
-      <AnalyticsContent />
-    </PermissionGate>
-  )
-}
-
-function AnalyticsContent() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,10 +78,13 @@ function AnalyticsContent() {
 
   if (loading) return <p className="text-sm text-muted-foreground">Loading analytics…</p>
   if (error) return <p className="text-sm text-destructive">{error}</p>
-  if (!data) return <p className="text-sm text-muted-foreground">No analytics data available yet.</p>
+  if (!data) return null
 
   const { kpis, stageDistribution, salespersonStats, activityVolume } = data
+
   const maxStageCount = Math.max(...Object.values(stageDistribution), 1)
+
+  // Compute max daily total for bar chart scaling
   const maxDayTotal = Math.max(
     ...activityVolume.map((d) =>
       ACTIVITY_TYPES.reduce((sum, t) => sum + (d[t] ?? 0), 0)
@@ -97,35 +93,18 @@ function AnalyticsContent() {
   )
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Analytics</h1>
-
+    <div className="flex flex-col gap-4">
       <QuickActionsCard showTeamPerformanceLink={salespersonStats.length > 1} />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card>
-          <CardHeader><CardTitle className="text-sm text-muted-foreground">Total Leads</CardTitle></CardHeader>
-          <CardContent><p className="text-3xl font-bold">{kpis.totalLeads}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm text-muted-foreground">Open Leads</CardTitle></CardHeader>
-          <CardContent><p className="text-3xl font-bold">{kpis.openLeads}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm text-muted-foreground">Won</CardTitle></CardHeader>
-          <CardContent><p className="text-3xl font-bold text-green-600">{kpis.wonLeads}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm text-muted-foreground">SLA Breached</CardTitle></CardHeader>
-          <CardContent>
-            <p className={`text-3xl font-bold ${kpis.slaBreached > 0 ? 'text-destructive' : ''}`}>
-              {kpis.slaBreached}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <section aria-label="Analytics insights" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MetricCard label="Total leads" helper="in scope" value={kpis.totalLeads} />
+        <MetricCard label="Open leads" helper="active pipeline" value={kpis.openLeads} />
+        <MetricCard label="Won" helper="closed won" value={kpis.wonLeads} />
+        <MetricCard label="SLA breached" helper="needs follow-up" value={kpis.slaBreached} />
+      </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Stage Distribution */}
         <Card>
           <CardHeader><CardTitle>Leads by Stage</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-2">
@@ -148,6 +127,7 @@ function AnalyticsContent() {
           </CardContent>
         </Card>
 
+        {/* Activity Volume (last 30 days) */}
         <Card>
           <CardHeader>
             <CardTitle>Activity Volume (last 30 days)</CardTitle>
@@ -189,6 +169,7 @@ function AnalyticsContent() {
 
       <RecentActivityCard />
 
+      {/* Per-salesperson table */}
       <Card id="team-performance">
         <CardHeader>
           <CardTitle>{data.scope === 'team' ? 'Team Performance' : 'My Performance'}</CardTitle>

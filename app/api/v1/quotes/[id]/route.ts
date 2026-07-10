@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { UpdateQuoteSchema } from '@/lib/validation'
-import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 import {
   successResponse,
   withErrorHandler,
@@ -26,13 +26,14 @@ function calculateQuoteTotals(items: { quantity: number; price: number; discount
 // GET /api/v1/quotes/:id
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
-  const { orgId } = ctx
-  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.QUOTES_READ)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.QUOTES_READ
+  )
 
-  const quote = await prisma.quote.findFirst({ where: { id: params.id, orgId } })
+  const quote = await prisma.quote.findFirst({ where: { id: params.id, orgId: ctx.orgId } })
   if (!quote) throw new NotFoundError('Quote')
-
-  if (!await canAccessLead(ctx.userId, ctx.role, quote.leadId)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, quote.leadId))) {
     throw new NotFoundError('Quote')
   }
 
@@ -43,15 +44,16 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
   const { orgId, userId } = ctx
-  rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.QUOTES_EDIT)
+  rbacService.requirePermission(
+    await rbacService.getUserPermissions(ctx.userId),
+    PERMISSIONS.QUOTES_EDIT
+  )
 
   const existing = await prisma.quote.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Quote')
-
-  if (!await canAccessLead(ctx.userId, ctx.role, existing.leadId)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, existing.leadId))) {
     throw new NotFoundError('Quote')
   }
-
   if (existing.status !== 'draft') {
     throw new ConflictError(`Cannot edit a quote with status "${existing.status}"`)
   }

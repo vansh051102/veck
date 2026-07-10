@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
-import { otherStages, reasonsForStage } from '@/lib/lead-stages'
+import { otherStages, reasonsForStage, visibleStagesForRole } from '@/lib/lead-stages'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { PermissionGate } from '@/components/permission-gate'
@@ -40,7 +40,8 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
   const [quotationValue, setQuotationValue] = useState('')
   const [quoteError, setQuoteError] = useState<string | null>(null)
 
-  const nextOptions = otherStages(currentStage)
+  const visible = me ? visibleStagesForRole(me.role) : otherStages(currentStage)
+  const nextOptions = otherStages(currentStage).filter((s) => visible.includes(s))
   const isLossPath = targetStage === 'Deal Lost' || targetStage === 'Disqualified'
   const isHandover = targetStage === 'Qualified'
   const isQuoteSent = targetStage === 'Quote Sent'

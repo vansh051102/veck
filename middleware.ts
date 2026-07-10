@@ -1,6 +1,7 @@
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { isAuthDisabled } from '@/lib/dev-auth'
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = [
@@ -10,78 +11,38 @@ const PUBLIC_ROUTES = [
   '/auth/inactive',
   '/api/v1/auth/signup',
   '/api/v1/auth/signin',
-  // NOTE: password reset goes through Supabase directly from the
-  // /auth/forgot-password page - there is intentionally no API route for it.
   '/api/v1/health',
-  // Called by this middleware itself (see below) - must stay public to
-  // avoid infinite recursion through the middleware matcher.
   '/api/internal/session',
-  // External webhooks - server-to-server, no user session exists. Each
-  // webhook route does its own auth (see e.g. INDIAMART_WEBHOOK_SECRET).
   '/api/v1/webhooks',
-  // Scheduler endpoints - server-to-server, authenticated via CRON_SECRET
-  // inside the route handler itself.
   '/api/v1/cron',
-  '/api/v1/diagnostic',
 ]
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
-  const supabase = createMiddlewareClient({ req, res })
+const ADMIN_ROUTES = ['/admin']
 
-  // Get session - this is a lightweight cookie/JWT check and is safe to run
-  // in the Edge Runtime that middleware executes in.
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+type SessionData = {
+  id: string
+  orgId: string
+  role: string
+  status: string
+  department: string | null
+  designation: string | null
+}
 
-  const pathname = req.nextUrl.pathname
-
-  // Allow public routes without authentication
-  if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
-    return res
-  }
-
-  // Require authentication for protected routes
-  if (!session) {
-    const loginUrl = new URL('/auth/login', req.url)
-    loginUrl.searchParams.set('redirectTo', pathname)
-    return NextResponse.redirect(loginUrl)
-  }
-
-  // Resolve the Supabase session to our app's User row (org, role, status).
-  // NOTE: this can't be done with Prisma directly here - middleware runs in
-  // the Edge Runtime, and Prisma's query engine requires a Node.js process.
-  // Instead we call an internal Node.js API route over HTTP, which is the
-  // supported way to bridge Edge middleware to a database lookup.
-  let sessionData: { id: string; orgId: string; role: string; status: string; department: string | null; designation: string | null } | null = null
+async function resolveSession(req: NextRequest, accessToken?: string): Promise<SessionData | null> {
   try {
     const sessionRes = await fetch(new URL('/api/internal/session', req.url), {
-      headers: { Authorization: `Bearer ${session.access_token}` },
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     })
     if (sessionRes.ok) {
-      sessionData = await sessionRes.json()
+      return sessionRes.json()
     }
   } catch (error) {
     console.error('Error resolving session:', error)
   }
+  return null
+}
 
-  if (!sessionData) {
-    return NextResponse.redirect(new URL('/auth/login', req.url))
-  }
-
-  // Check if user is active
-  if (sessionData.status !== 'active') {
-    return NextResponse.redirect(new URL('/auth/inactive', req.url))
-  }
-
-  // NOTE: /admin (admin workspace) is intentionally not role-gated here — a
-  // home-org "member" can be a workspace admin of another org via Membership.
-  // Authorization happens per-request in /api/v1/admin/* route handlers.
-
-  // Attach user info to the *request* headers so downstream route handlers
-  // can read them. Setting headers on `res` only affects the response sent
-  // to the browser - it does NOT forward anything to route handlers.
+function attachUserHeaders(req: NextRequest, res: NextResponse, sessionData: SessionData) {
   const requestHeaders = new Headers(req.headers)
   requestHeaders.set('x-user-id', sessionData.id)
   requestHeaders.set('x-org-id', sessionData.orgId)
@@ -90,9 +51,62 @@ export async function middleware(req: NextRequest) {
   requestHeaders.set('x-user-designation', sessionData.designation ?? '')
 
   const nextRes = NextResponse.next({ request: { headers: requestHeaders } })
-  // Preserve any cookies Supabase set on `res` (session refresh).
   res.cookies.getAll().forEach((cookie) => nextRes.cookies.set(cookie))
   return nextRes
+}
+
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next()
+  const pathname = req.nextUrl.pathname
+
+  if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
+    return res
+  }
+
+  // Dev bypass: skip login redirects; always impersonate dev user (ignore stale cookies).
+  if (isAuthDisabled()) {
+    const sessionData = await resolveSession(req)
+    if (sessionData) {
+      return attachUserHeaders(req, res, sessionData)
+    }
+    return res
+  }
+
+  const supabase = createMiddlewareClient(
+    { req, res },
+    {
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    }
+  )
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session) {
+    const loginUrl = new URL('/auth/login', req.url)
+    loginUrl.searchParams.set('redirectTo', pathname)
+    return NextResponse.redirect(loginUrl)
+  }
+
+  const sessionData = await resolveSession(req, session.access_token)
+
+  if (!sessionData) {
+    return NextResponse.redirect(new URL('/auth/login', req.url))
+  }
+
+  if (sessionData.status !== 'active') {
+    return NextResponse.redirect(new URL('/auth/inactive', req.url))
+  }
+
+  if (ADMIN_ROUTES.some((route) => pathname.startsWith(route))) {
+    if (sessionData.role !== 'admin') {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
+  }
+
+  return attachUserHeaders(req, res, sessionData)
 }
 
 export const config = {

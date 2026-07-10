@@ -13,7 +13,7 @@ import {
 } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
-import { buildOwnershipFilter, PERMISSIONS } from '@/lib/rbac'
+import { buildOwnershipFilterAsync, PERMISSIONS } from '@/lib/rbac'
 
 // POST /api/v1/leads - Create a lead (Step 1 of the workflow)
 export const POST = withErrorHandler(async (req) => {
@@ -46,6 +46,7 @@ export const POST = withErrorHandler(async (req) => {
     sourceDetails: input.sourceDetails,
     tags: input.tags,
     createdById: ctx.userId,
+    creatorRole: ctx.role,
   })
 
   if (result.duplicate) {
@@ -123,7 +124,12 @@ export const GET = withErrorHandler(async (req) => {
     throw new ValidationError(`Invalid contactOutcome filter: ${contactOutcome}`)
   }
 
-  const ownershipFilter = buildOwnershipFilter(effectiveUserId, effectiveRole, effectiveDepartment, 'leads')
+  const ownershipFilter = await buildOwnershipFilterAsync(
+    effectiveUserId,
+    effectiveRole,
+    effectiveDepartment,
+    'leads'
+  )
 
   const where = {
     orgId: ctx.orgId,
@@ -159,14 +165,50 @@ export const GET = withErrorHandler(async (req) => {
       include: {
         contact: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         assignedTo: { select: { id: true, fullName: true, email: true } },
-        // Lead origin: who sourced/created it (marketing attribution)
         createdBy: { select: { id: true, fullName: true } },
+        quotes: {
+          select: { id: true, quoteNumber: true, status: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        activities: {
+          select: { type: true, title: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
       },
     }),
     prisma.lead.count({ where }),
   ])
 
-  return paginatedResponse(leads, {
+  const enriched = leads.map((lead) => {
+    const latest = lead.activities[0]
+    const latestQuote = lead.quotes[0] ?? null
+    const activityLabel = latest?.title || latest?.type || 'Updated'
+    let stageDetails = 'No stage details'
+    if (lead.dealLostReason) {
+      stageDetails = lead.dealLostDetails
+        ? `${lead.dealLostReason}: ${lead.dealLostDetails}`
+        : lead.dealLostReason
+    } else if (lead.quotationNumber) {
+      stageDetails = `Quote ${lead.quotationNumber}`
+    } else if (latestQuote) {
+      stageDetails = `Quote ${latestQuote.quoteNumber}`
+    } else if (lead.requirement) {
+      stageDetails = lead.requirement.slice(0, 80)
+    }
+
+    const { activities, quotes, ...rest } = lead
+    return {
+      ...rest,
+      latestQuote,
+      hasQuote: Boolean(latestQuote || lead.quotationNumber),
+      lastActivityLabel: activityLabel,
+      stageDetails,
+    }
+  })
+
+  return paginatedResponse(enriched, {
     page,
     limit,
     total,

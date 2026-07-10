@@ -1,126 +1,14 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from './db'
 import { seedDefaultRoles } from './seed-roles'
 import { supabase, supabaseAdmin } from './supabase-clients'
 import { createChildLogger } from './logger'
-import { ValidationError } from './errors'
+import { defaultWorkflowStages } from './workflow-stages'
 
 const log = createChildLogger('auth')
 
 // Re-export Supabase clients for backward compatibility
 export { supabase, supabaseAdmin }
-
-// ============================================================================
-// ORGANIZATION PROVISIONING (shared by signup and the admin workspace)
-// ============================================================================
-
-export interface ProvisionOrganizationInput {
-  name: string
-  industry?: string | null
-  country?: string | null
-}
-
-/**
- * Create an organization with its default roles and settings. Shared by
- * public signup and "+ New company" in the admin workspace.
- */
-export async function provisionOrganization(
-  input: ProvisionOrganizationInput,
-  createdByUserId: string
-) {
-  const slugBase = input.name
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-
-  const org = await prisma.organization.create({
-    data: {
-      name: input.name,
-      slug: slugBase + '-' + Date.now(),
-      subscriptionPlan: 'free',
-      industry: input.industry || null,
-      ...(input.country ? { country: input.country } : {}),
-    },
-  })
-
-  await seedDefaultRoles(org.id)
-
-  await prisma.settings.create({
-    data: {
-      orgId: org.id,
-      updatedBy: createdByUserId,
-      workflowStages: {
-        stages: ['New Lead', 'Contacted', 'Qualified', 'Quote Sent', 'Closed Won', 'Deal Lost', 'Disqualified'],
-      },
-    },
-  })
-
-  return org
-}
-
-export interface CreateOrgUserInput {
-  email: string
-  password: string
-  fullName: string
-  role: string
-  department?: string | null
-  designation?: string | null
-  territory?: string | null
-  branch?: string | null
-}
-
-/**
- * Create a Supabase auth user + org User row + home-org Membership. Shared by
- * POST /users and the admin workspace. The caller is responsible for
- * org-scoping/global email pre-checks and RBAC.
- */
-export async function createOrgUser(orgId: string, input: CreateOrgUserInput) {
-  const { data: { user: authUser }, error: authError } =
-    await supabaseAdmin.auth.admin.createUser({
-      email: input.email,
-      password: input.password,
-      email_confirm: true, // Auto-confirm so they can log in immediately
-    })
-
-  if (authError) throw new ValidationError('Failed to create auth user', { message: authError.message })
-  if (!authUser) throw new ValidationError('Failed to create auth user')
-
-  const dbUser = await prisma.user.create({
-    data: {
-      id: authUser.id,
-      email: input.email,
-      fullName: input.fullName,
-      orgId,
-      role: input.role,
-      department: input.department || null,
-      designation: input.designation || null,
-      territory: input.territory || null,
-      branch: input.branch || null,
-    },
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      role: true,
-      department: true,
-      designation: true,
-      territory: true,
-      branch: true,
-      status: true,
-      createdAt: true,
-    },
-  })
-
-  // Home-org membership (mirrors the migration backfill invariant)
-  await prisma.membership.create({
-    data: {
-      userId: dbUser.id,
-      orgId,
-      role: input.role === 'admin' ? 'admin' : 'member',
-    },
-  })
-
-  return dbUser
-}
 
 // ============================================================================
 // AUTH FUNCTIONS
@@ -132,35 +20,95 @@ export async function signUp(
   fullName: string,
   orgName: string
 ) {
+  const normalizedEmail = email.trim().toLowerCase()
+  let authUserId: string | null = null
+
   try {
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+    const existing = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    })
+    if (existing) {
+      throw new Error('An account with this email already exists. Sign in instead.')
+    }
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAdmin.auth.admin.createUser({
+      email: normalizedEmail,
       password,
-      email_confirm: true, // Auto-confirm so they can log in immediately
+      email_confirm: true,
+      user_metadata: { full_name: fullName.trim() },
     })
 
-    if (authError) throw authError
+    if (authError) {
+      const msg = authError.message?.toLowerCase() ?? ''
+      if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
+        throw new Error('An account with this email already exists. Sign in instead.')
+      }
+      throw authError
+    }
     if (!user) throw new Error('Failed to create user')
+    authUserId = user.id
 
-    const org = await provisionOrganization({ name: orgName }, user.id)
+    const slugBase = orgName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48)
+
+    const org = await prisma.organization.create({
+      data: {
+        name: orgName.trim(),
+        slug: `${slugBase || 'workspace'}-${Date.now()}`,
+        subscriptionPlan: 'free',
+      },
+    })
 
     const dbUser = await prisma.user.create({
       data: {
         id: user.id,
-        email,
-        fullName,
+        email: normalizedEmail,
+        fullName: fullName.trim(),
         orgId: org.id,
         role: 'admin',
+        department: null,
+        defaultDashboard: '/admin',
       },
       include: { org: true },
     })
 
-    await prisma.membership.create({
-      data: { userId: dbUser.id, orgId: org.id, role: 'admin' },
+    await seedDefaultRoles(org.id)
+
+    await prisma.settings.create({
+      data: {
+        orgId: org.id,
+        updatedBy: user.id,
+        workflowStages: { stages: defaultWorkflowStages() } as unknown as Prisma.InputJsonValue,
+        moduleAccess: {
+          leads: true,
+          lead_message_logs: true,
+          contacts: true,
+          lead_generation_campaigns: false,
+          customer_folders: true,
+          auto_create_folders: true,
+          quotations: true,
+        } as Prisma.InputJsonValue,
+        roleHierarchy: [] as Prisma.InputJsonValue,
+      },
     })
 
     return { user: dbUser, org }
   } catch (error) {
+    // Roll back orphaned Auth user if Prisma provisioning failed after createUser
+    if (authUserId) {
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(authUserId)
+      } catch (cleanupErr) {
+        log.error({ err: cleanupErr, authUserId }, 'signUp cleanup failed')
+      }
+    }
     log.error({ err: error }, 'signUp failed')
     throw error
   }
@@ -232,7 +180,13 @@ export async function getOrganizationUsers(orgId: string) {
       id: true,
       email: true,
       fullName: true,
+      phone: true,
       role: true,
+      department: true,
+      designation: true,
+      territory: true,
+      branch: true,
+      reportsToId: true,
       status: true,
       lastLogin: true,
       createdAt: true,

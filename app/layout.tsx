@@ -1,26 +1,21 @@
 import type { Metadata } from 'next'
-import { Plus_Jakarta_Sans } from 'next/font/google'
+import { GeistSans } from 'geist/font/sans'
+import { BRAND } from '@/lib/brand'
 import './globals.css'
 
-const sans = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-sans',
-  display: 'swap',
-})
-
 export const metadata: Metadata = {
-  title: 'VECK',
-  description: 'Steel trading operating system',
+  title: {
+    default: `${BRAND.name} — ${BRAND.tagline}`,
+    template: `%s · ${BRAND.name}`,
+  },
+  description: BRAND.metaDescription,
 }
 
-// Applies the saved theme before React hydrates, avoiding a flash of the
-// wrong theme on load. Kept as a tiny inline script rather than a client
-// component so it runs before paint.
 const themeInitScript = `
   (function () {
     try {
       var stored = localStorage.getItem('veck-theme');
-      var theme = stored || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      var theme = stored || 'light';
       if (theme === 'dark') document.documentElement.classList.add('dark');
     } catch (e) {}
   })();
@@ -28,11 +23,13 @@ const themeInitScript = `
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={sans.variable} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={GeistSans.variable}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body className="min-h-screen font-sans antialiased">{children}</body>
+      <body className="min-h-screen bg-background font-sans text-sm text-foreground antialiased">
+        {children}
+      </body>
     </html>
   )
 }

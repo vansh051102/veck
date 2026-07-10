@@ -6,7 +6,11 @@ const log = createChildLogger('rbac')
 // Re-export for backward compatibility — new code should import from
 // permissions.ts or ownership.ts directly.
 export { PERMISSIONS, ROLE_PERMISSIONS, type Permission } from './permissions'
-export { buildOwnershipFilter, canAccessLead } from './ownership'
+export {
+  buildOwnershipFilter,
+  buildOwnershipFilterAsync,
+  canAccessLead,
+} from './ownership'
 
 // ============================================================================
 // PERMISSION LOOKUP (used by auth/me route and RbacService)

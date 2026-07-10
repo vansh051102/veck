@@ -2,7 +2,6 @@ import { prisma } from './db'
 import { calculateSlaDeadline } from './workflow'
 import { createSopChecklistsForStage } from './sop-checklists'
 import { pickAssignee } from './auto-assign'
-import { TERMINAL_STAGES } from './lead-stages'
 import type { Prisma, Lead } from '@prisma/client'
 
 export interface CreateLeadInput {
@@ -18,6 +17,8 @@ export interface CreateLeadInput {
   createdById: string
   /** Explicit assignee (e.g. from an import row) — bypasses auto-assignment when set. */
   assignedToId?: string
+  /** Creator role — selects marketing vs sales New Lead SOP checklists. */
+  creatorRole?: string
 }
 
 export type CreateLeadResult =
@@ -52,7 +53,9 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
       where: {
         orgId: input.orgId,
         contactId: input.contactId,
-        stage: { notIn: [...TERMINAL_STAGES] },
+        stage: {
+          notIn: ['Order Confirmed', 'Order Closed', 'Deal Lost', 'Disqualified', 'Closed Won'],
+        },
       },
       select: {
         id: true,
@@ -96,13 +99,10 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
       },
     })
 
-    // SOP Step 1 checklists (Registration + Initial Contact) - the required
-    // ones gate the lead from leaving "New Lead" until complete.
-    await createSopChecklistsForStage(tx, created.id, stage)
+    await createSopChecklistsForStage(tx, created.id, stage, input.creatorRole)
 
     await tx.timeline.create({
       data: {
-        orgId: input.orgId,
         leadId: created.id,
         events: {
           create: {

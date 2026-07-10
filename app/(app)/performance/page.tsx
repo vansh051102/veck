@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { MetricCard } from '@/components/ui/metric-card'
 import { useCurrentUser } from '@/lib/use-current-user'
 
 interface CallStats {
@@ -41,13 +42,10 @@ interface PerformanceData {
 
 const DAY_FILTERS = [
   { label: 'All time', value: '' },
-  { label: '7d', value: '7' },
-  { label: '30d', value: '30' },
-  { label: '90d', value: '90' },
+  { label: '7 days', value: '7' },
+  { label: '30 days', value: '30' },
+  { label: '4 months', value: '120' },
 ]
-
-const filterControlClass =
-  'h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary'
 
 export default function PerformancePage() {
   const me = useCurrentUser()
@@ -93,26 +91,24 @@ export default function PerformancePage() {
   const maxDayTotal = Math.max(...data.calls.byDay.map((d) => d.total), 1)
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">{isTeamView ? 'Performance' : 'My Performance'}</h1>
+    <div className="flex flex-col gap-4">
+      {isTeamView && (
+        <p className="text-sm text-muted-foreground">Team performance across your workspace</p>
+      )}
 
-      {/* Own stats - shown to everyone */}
       {mine && (
-        <div>
-          {isTeamView && (
-            <h2 className="mb-3 text-sm font-medium text-muted-foreground">My stats</h2>
-          )}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {myCards.map((c) => (
-              <Card key={c.label}>
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">{c.label}</p>
-                  <p className="text-2xl font-semibold">{c.value}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
+        <section aria-label="Performance insights" className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {myCards.slice(0, 4).map((c) => (
+            <MetricCard key={c.label} label={c.label} value={c.value} />
+          ))}
+        </section>
+      )}
+      {mine && myCards.length > 4 && (
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          {myCards.slice(4).map((c) => (
+            <MetricCard key={c.label} label={c.label} value={c.value} />
+          ))}
+        </section>
       )}
 
       {/* Call activity */}
@@ -151,7 +147,7 @@ export default function PerformancePage() {
                 setDays('')
                 setFromDate(e.target.value)
               }}
-              className={filterControlClass}
+              className="crm-input"
             />
             <label htmlFor="perf-to" className="text-sm text-muted-foreground">
               To
@@ -164,7 +160,7 @@ export default function PerformancePage() {
                 setDays('')
                 setToDate(e.target.value)
               }}
-              className={filterControlClass}
+              className="crm-input"
             />
           </div>
         </div>

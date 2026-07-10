@@ -4,15 +4,13 @@ import { ChecklistItemSchema } from '@/lib/validation'
 import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
-import { PERMISSIONS, canAccessLead } from '@/lib/rbac'
+import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 
 interface Params {
   params: { id: string; itemId: string }
 }
 
 // PUT /api/v1/checklists/:id/items/:itemId - Toggle item completion.
-// When every item on the checklist is complete, the checklist itself is
-// marked completed (and vice versa if an item is unchecked afterward).
 export const PUT = withErrorHandler(async (req: Request, { params }: Params) => {
   const ctx = await validateRequest(req)
   const { orgId, userId } = ctx
@@ -29,7 +27,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     throw new NotFoundError('Checklist item')
   }
 
-  if (!await canAccessLead(ctx.userId, ctx.role, item.checklist.lead.id)) {
+  if (!(await canAccessLead(ctx.userId, ctx.role, item.checklist.leadId))) {
     throw new NotFoundError('Checklist item')
   }
 
@@ -51,7 +49,6 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
       },
     })
 
-    // Recalculate whether the parent checklist should flip completed/incomplete
     const siblingItems = item.checklist.items.map((i) =>
       i.id === item.id ? updatedItem : i
     )
@@ -68,15 +65,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     return { updatedItem, updatedChecklist }
   })
 
-  await logAudit(
-    orgId,
-    userId,
-    'UPDATE',
-    'ChecklistItem',
-    item.id,
-    item.title,
-    { completed }
-  )
+  await logAudit(orgId, userId, 'UPDATE', 'ChecklistItem', item.id, item.title, { completed })
 
   const total = result.updatedChecklist.items.length
   const done = result.updatedChecklist.items.filter((i) => i.completed).length

@@ -1,16 +1,34 @@
 import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
-import { getUserPermissions } from '@/lib/rbac'
-import { validateRequest } from '@/lib/middleware/validate-headers'
-import { prisma } from '@/lib/db'
+import { rbacService } from '@/lib/services/rbac.service'
+import { isAuthDisabled } from '@/lib/dev-auth'
+import { resolveDevBypassUser } from '@/lib/dev-bootstrap'
 
 export const GET = withErrorHandler(async (req) => {
-  // DB-verified identity (existence, active status, org match) — same boundary
-  // every other route uses instead of trusting middleware headers directly.
-  const ctx = await validateRequest(req)
+  if (!isAuthDisabled()) {
+    const authHeader = req.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw new UnauthorizedError('Missing or invalid authorization header')
+    }
+  }
 
-  // Fetch user with organization for the client bootstrap payload
+  let userId = req.headers.get('x-user-id')
+  let orgId = req.headers.get('x-org-id')
+
+  if ((!userId || !orgId) && isAuthDisabled()) {
+    const bypass = await resolveDevBypassUser()
+    if (bypass) {
+      userId = bypass.id
+      orgId = bypass.orgId
+    }
+  }
+
+  if (!userId || !orgId) {
+    throw new UnauthorizedError('User context not found')
+  }
+
+  const { prisma } = await import('@/lib/db')
   const user = await prisma.user.findUnique({
-    where: { id: ctx.userId },
+    where: { id: userId },
     include: {
       org: {
         select: {
@@ -18,7 +36,15 @@ export const GET = withErrorHandler(async (req) => {
           name: true,
           slug: true,
           subscriptionPlan: true,
-          moduleAccess: true,
+          industry: true,
+          domain: true,
+          email: true,
+          phone: true,
+          gstin: true,
+          pan: true,
+          address: true,
+          country: true,
+          currency: true,
         },
       },
     },
@@ -28,28 +54,19 @@ export const GET = withErrorHandler(async (req) => {
     throw new UnauthorizedError('User not found')
   }
 
-  // Fetch permissions from the Role table
-  const permissions = await getUserPermissions(ctx.userId)
+  if (user.status !== 'active') {
+    throw new UnauthorizedError('User is not active')
+  }
 
-  // Admin workspace entry: super-admins always; otherwise only users holding
-  // an admin membership in a company OTHER than their home org (home-org
-  // admins manage their own company via /settings).
-  const foreignAdminCount = user.isSuperAdmin
-    ? 0
-    : await prisma.membership.count({
-        where: {
-          userId: ctx.userId,
-          role: 'admin',
-          status: 'active',
-          NOT: { orgId: user.orgId },
-        },
-      })
+  const perms = await rbacService.getUserPermissions(userId)
+  const permissions = perms.hasWildcard ? ['*'] : perms.permissions
 
   return successResponse({
     user: {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
+      phone: user.phone,
       role: user.role,
       department: user.department,
       designation: user.designation,
@@ -57,8 +74,6 @@ export const GET = withErrorHandler(async (req) => {
       lastLogin: user.lastLogin,
       avatarUrl: user.avatarUrl,
       defaultDashboard: user.defaultDashboard,
-      isSuperAdmin: user.isSuperAdmin,
-      canAccessAdminWorkspace: user.isSuperAdmin || foreignAdminCount > 0,
       permissions,
     },
     org: user.org,

@@ -4,6 +4,7 @@ import {
   calculateSlaDeadline,
   isSlaBreached,
   assertTransitionAllowed,
+  assertRoleCanTransition,
   TERMINAL_STAGES,
 } from '../workflow'
 import { ValidationError, ConflictError } from '../api-response'
@@ -72,14 +73,44 @@ describe('isValidTransition', () => {
     expect(() => isValidTransition('Not A Stage', 'Contacted')).toThrow(ValidationError)
     expect(() => isValidTransition('Contacted', 'Not A Stage')).toThrow(ValidationError)
   })
+
+  it('normalizes legacy Closed Won to Order Confirmed', () => {
+    expect(isValidTransition('Closed Won', 'Order Closed')).toBe(true)
+  })
 })
 
 describe('isTerminalStage', () => {
   it('identifies terminal stages correctly', () => {
-    expect(isTerminalStage('Closed Won')).toBe(true)
+    expect(isTerminalStage('Order Closed')).toBe(true)
+    expect(isTerminalStage('Order Confirmed')).toBe(false)
     expect(isTerminalStage('Deal Lost')).toBe(true)
     expect(isTerminalStage('Disqualified')).toBe(true)
     expect(isTerminalStage('Contacted')).toBe(false)
+    expect(isTerminalStage('Closed Won')).toBe(true)
+  })
+})
+
+describe('assertRoleCanTransition', () => {
+  it('blocks sales from Qualified → Quote Sent', () => {
+    expect(() => assertRoleCanTransition('sales_executive', 'Qualified', 'Quote Sent')).toThrow(
+      ValidationError
+    )
+  })
+
+  it('allows purchase Qualified → Quote Sent', () => {
+    expect(() => assertRoleCanTransition('purchase', 'Qualified', 'Quote Sent')).not.toThrow()
+  })
+
+  it('blocks marketing from entering Quote Sent', () => {
+    expect(() => assertRoleCanTransition('marketing_executive', 'Qualified', 'Quote Sent')).toThrow(
+      ValidationError
+    )
+  })
+
+  it('allows sales Quote Sent → Order Confirmed', () => {
+    expect(() =>
+      assertRoleCanTransition('sales_executive', 'Quote Sent', 'Order Confirmed')
+    ).not.toThrow()
   })
 })
 
@@ -106,8 +137,13 @@ describe('calculateSlaDeadline', () => {
     expect(deadline.getTime() - from.getTime()).toBe(6 * 24 * 60 * 60 * 1000)
   })
 
+  it('gives Order Confirmed a 72 hour window', () => {
+    const deadline = calculateSlaDeadline('Order Confirmed', from)
+    expect(deadline.getTime() - from.getTime()).toBe(72 * 60 * 60 * 1000)
+  })
+
   it('gives terminal stages a far-future deadline (never breaches)', () => {
-    const deadline = calculateSlaDeadline('Closed Won', from)
+    const deadline = calculateSlaDeadline('Order Closed', from)
     expect(deadline.getTime()).toBeGreaterThan(from.getTime() + 300 * 24 * 60 * 60 * 1000)
   })
 })
@@ -143,7 +179,7 @@ describe('assertTransitionAllowed', () => {
   })
 
   it('allows reopening a terminal lead back to an active stage', () => {
-    const lead = makeLead({ stage: 'Closed Won' })
+    const lead = makeLead({ stage: 'Order Closed' })
     expect(() => assertTransitionAllowed(lead, 'Contacted')).not.toThrow()
   })
 
@@ -166,7 +202,6 @@ describe('assertTransitionAllowed', () => {
 
   it('rejects a Deal Lost reason on the Disqualified path (lists are distinct)', () => {
     const lead = makeLead({ stage: 'Qualified' })
-    // "Budget Constraints" is a Deal Lost reason, not a Disqualified one.
     expect(() => assertTransitionAllowed(lead, 'Disqualified', 'Budget Constraints')).toThrow(
       ValidationError
     )

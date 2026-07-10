@@ -1,13 +1,28 @@
 import { prisma } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/rbac'
+import { isKnownPermission } from '@/lib/permissions'
 import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
-import { UpdateRoleSchema } from '@/lib/validation'
+import { z } from 'zod'
 
 interface Params {
   params: { id: string }
 }
+
+const UpdateRoleSchema = z.object({
+  name: z.string().min(1).optional(),
+  permissions: z
+    .array(z.string())
+    .min(1, 'At least one permission is required')
+    .refine((perms) => perms.every(isKnownPermission), {
+      message: 'One or more permissions are not recognized',
+    }),
+  description: z.string().nullable().optional(),
+  hierarchyLevel: z.number().int().min(0).optional(),
+  department: z.string().nullable().optional(),
+  parentRoleId: z.string().uuid().nullable().optional(),
+})
 
 // GET /api/v1/roles/:id - Get a single role
 export const GET = withErrorHandler(async (req: Request, { params }: Params) => {

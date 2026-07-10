@@ -79,6 +79,29 @@ export const PERMISSIONS = {
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
 
+/** All known permission strings — use for admin UI matrix + role validation */
+export const ALL_PERMISSION_VALUES: string[] = Object.values(PERMISSIONS)
+
+/** Grouped for admin permission matrix UI */
+export const PERMISSION_GROUPS: Record<string, string[]> = {
+  leads: ['read', 'create', 'edit', 'delete', 'assign', 'import', 'export'],
+  contacts: ['read', 'create', 'edit'],
+  activities: ['read', 'create', 'edit', 'delete'],
+  quotes: ['read', 'create', 'edit', 'send'],
+  purchase_requests: ['read', 'create', 'edit'],
+  checklists: ['read', 'create', 'edit'],
+  analytics: ['read'],
+  settings: ['read', 'edit'],
+  users: ['read', 'create', 'edit', 'delete'],
+  roles: ['read', 'create', 'edit'],
+  master_data: ['read', 'create', 'edit'],
+  reports: ['read'],
+}
+
+export function isKnownPermission(perm: string): boolean {
+  return perm === '*' || ALL_PERMISSION_VALUES.includes(perm)
+}
+
 // ============================================================================
 // ROLE → PERMISSION MAPPING (DEFAULTS)
 // ============================================================================

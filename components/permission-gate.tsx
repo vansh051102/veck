@@ -1,6 +1,7 @@
 'use client'
 
 import { useCurrentUser } from '@/lib/use-current-user'
+import { isAuthDisabled } from '@/lib/dev-auth'
 
 interface PermissionGateProps {
   permission: string
@@ -20,7 +21,11 @@ interface PermissionGateProps {
 export function PermissionGate({ permission, children, fallback = null }: PermissionGateProps) {
   const user = useCurrentUser()
 
-  if (!user) return <>{fallback}</>
+  if (!user) {
+    // Dev auth bypass: show gated chrome while the impersonated admin loads.
+    if (isAuthDisabled()) return <>{children}</>
+    return <>{fallback}</>
+  }
   if (user.permissions.includes('*')) return <>{children}</>
   if (user.permissions.includes(permission)) return <>{children}</>
 
@@ -39,7 +44,10 @@ interface AnyPermissionGateProps {
 export function AnyPermissionGate({ permissions, children, fallback = null }: AnyPermissionGateProps) {
   const user = useCurrentUser()
 
-  if (!user) return <>{fallback}</>
+  if (!user) {
+    if (isAuthDisabled()) return <>{children}</>
+    return <>{fallback}</>
+  }
   if (user.permissions.includes('*')) return <>{children}</>
   if (permissions.some((p) => user.permissions.includes(p))) return <>{children}</>
 

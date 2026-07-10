@@ -4,7 +4,7 @@
 export function dashboardRouteForRole(role: string): string {
   switch (role) {
     case 'admin':
-      return '/dashboards/admin'
+      return '/admin'
     case 'marketing_manager':
     case 'marketing_executive':
       return '/dashboards/marketing'
