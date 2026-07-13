@@ -98,6 +98,34 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   reports: ['read'],
 }
 
+/** Human-readable label + description per resource — used by the admin role matrix UI */
+export const RESOURCE_LABELS: Record<string, { label: string; description: string }> = {
+  leads: { label: 'Leads', description: 'Incoming sales leads and their pipeline stage' },
+  contacts: { label: 'Contacts', description: 'People and companies linked to leads' },
+  activities: { label: 'Activities', description: 'Calls, notes, and follow-ups logged against leads' },
+  quotes: { label: 'Quotes', description: 'Price quotations sent to customers' },
+  purchase_requests: { label: 'Purchase Requests', description: 'Internal requests to buy materials or stock' },
+  checklists: { label: 'Checklists', description: 'SOP checklists attached to leads or orders' },
+  analytics: { label: 'Analytics', description: 'Dashboards and pipeline reporting' },
+  settings: { label: 'Settings', description: 'Workspace configuration and integrations' },
+  users: { label: 'Users', description: 'Team member accounts' },
+  roles: { label: 'Roles', description: 'Role definitions and permissions (this screen)' },
+  master_data: { label: 'Master Data', description: 'Shared reference data like products and vendors' },
+  reports: { label: 'Reports', description: 'Exported business reports' },
+}
+
+/** Short label per action verb, shown as a matrix column header */
+export const ACTION_LABELS: Record<string, string> = {
+  read: 'View',
+  create: 'Create',
+  edit: 'Edit',
+  delete: 'Delete',
+  assign: 'Assign',
+  import: 'Import',
+  export: 'Export',
+  send: 'Send',
+}
+
 export function isKnownPermission(perm: string): boolean {
   return perm === '*' || ALL_PERMISSION_VALUES.includes(perm)
 }

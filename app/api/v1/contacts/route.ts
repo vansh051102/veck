@@ -70,9 +70,13 @@ export const GET = withErrorHandler(async (req) => {
   // Exact-match params for duplicate detection (used by the new-lead form)
   const phoneExact = url.searchParams.get('phone')
   const emailExact = url.searchParams.get('email')
+  // 'assigned' | 'unassigned' — whether a Lead has been created from this contact
+  const assignedFilter = url.searchParams.get('assigned')
 
   const where = {
     orgId,
+    ...(assignedFilter === 'assigned' ? { leads: { some: {} } } : {}),
+    ...(assignedFilter === 'unassigned' ? { leads: { none: {} } } : {}),
     ...(phoneExact || emailExact
       ? {
           OR: [
@@ -98,6 +102,13 @@ export const GET = withErrorHandler(async (req) => {
       skip,
       take: limit,
       orderBy: { createdAt: 'desc' },
+      include: {
+        leads: {
+          select: { id: true, stage: true, assignedTo: { select: { fullName: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
     }),
     prisma.contact.count({ where }),
   ])

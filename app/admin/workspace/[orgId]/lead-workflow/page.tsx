@@ -1,11 +1,23 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { toFormErrors } from '@/lib/form-errors'
 import type { WorkflowStage } from '@/lib/workflow-stages'
+
+const BEHAVIOR_OPTIONS: { value: string; hint: string }[] = [
+  { value: 'Default', hint: 'No extra action when a lead enters this stage.' },
+  { value: 'Quotation', hint: 'Generates/attaches a quote document for the lead.' },
+  { value: 'Order Execution', hint: 'Starts order fulfillment tracking for the lead.' },
+]
+
+const FORM_OPTIONS: { value: string; hint: string }[] = [
+  { value: 'Default', hint: 'No extra fields required to enter this stage.' },
+  { value: 'Quote fields', hint: 'Asks for quote amount/items before saving.' },
+  { value: 'Loss reason', hint: 'Requires a reason before marking the lead lost.' },
+]
 
 export default function LeadWorkflowPage() {
   const { toast } = useToast()
@@ -14,6 +26,9 @@ export default function LeadWorkflowPage() {
   const [color, setColor] = useState('#3C82D9')
   const [behavior, setBehavior] = useState('Default')
   const [saving, setSaving] = useState(false)
+  const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle')
+  const dragIndex = useRef<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   function load() {
     api
@@ -28,10 +43,12 @@ export default function LeadWorkflowPage() {
 
   async function persist(next: WorkflowStage[]) {
     setSaving(true)
+    setSaveState('idle')
     try {
       const normalized = next.map((s, i) => ({ ...s, order: i + 1 }))
       await api.put('/settings', { workflowStages: { stages: normalized } })
       setStages(normalized)
+      setSaveState('saved')
       toast('Workflow saved')
     } catch (err) {
       toast(toFormErrors(err, 'Failed to save').message, 'error')
@@ -71,6 +88,14 @@ export default function LeadWorkflowPage() {
     persist(next)
   }
 
+  function reorder(from: number, to: number) {
+    if (from === to) return
+    const next = [...stages]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    persist(next)
+  }
+
   function updateStage(index: number, patch: Partial<WorkflowStage>) {
     const next = stages.map((s, i) => (i === index ? { ...s, ...patch } : s))
     persist(next)
@@ -95,21 +120,29 @@ export default function LeadWorkflowPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h2 className="text-xl font-semibold tracking-tight">Lead Workflow</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold tracking-tight">Lead Workflow</h2>
+        <span className="text-xs text-muted-foreground" aria-live="polite">
+          {saving ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''}
+        </span>
+      </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Non-terminal stages can jump to any other stage. Terminal stages can only be reset to New
-        Lead by permitted users.
+        Stages below drive both the lead pipeline and the sales stages (Quote Sent, Order
+        Confirmed, Order Closed). Non-terminal stages can jump to any other stage. Terminal stages
+        can only be reset to New Lead by permitted users.
       </p>
 
-      <div className="mt-6 flex flex-wrap gap-2">
-        {stages.map((s) => (
-          <span
-            key={s.key}
-            className="rounded-full px-3 py-1 text-xs font-medium text-white"
-            style={{ backgroundColor: s.color }}
-          >
-            {s.name}
-          </span>
+      <div className="mt-6 flex flex-wrap items-center gap-1.5" aria-label="Pipeline preview">
+        {stages.map((s, i) => (
+          <div key={s.key} className="flex items-center gap-1.5">
+            <span
+              className="rounded-full px-3 py-1 text-xs font-medium text-white"
+              style={{ backgroundColor: s.color }}
+            >
+              {s.name}
+            </span>
+            {i < stages.length - 1 && <span className="text-muted-foreground">→</span>}
+          </div>
         ))}
       </div>
 
@@ -133,9 +166,13 @@ export default function LeadWorkflowPage() {
             className="h-9 rounded-md border border-border px-2 text-sm"
             value={behavior}
             onChange={(e) => setBehavior(e.target.value)}
+            title={BEHAVIOR_OPTIONS.find((o) => o.value === behavior)?.hint}
           >
-            <option>Default</option>
-            <option>Quotation</option>
+            {BEHAVIOR_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.value}
+              </option>
+            ))}
           </select>
         </label>
         <Button onClick={addStage} disabled={saving}>
@@ -145,14 +182,54 @@ export default function LeadWorkflowPage() {
 
       <ul className="mt-6 space-y-3">
         {stages.map((s, i) => (
-          <li key={s.key} className="rounded-lg border border-border bg-card p-4">
+          <li
+            key={s.key}
+            draggable
+            onDragStart={() => {
+              dragIndex.current = i
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragOverIndex(i)
+            }}
+            onDragLeave={() => setDragOverIndex((cur) => (cur === i ? null : cur))}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOverIndex(null)
+              if (dragIndex.current !== null) reorder(dragIndex.current, i)
+              dragIndex.current = null
+            }}
+            onDragEnd={() => setDragOverIndex(null)}
+            className={`rounded-lg border bg-card p-4 transition-colors ${
+              dragOverIndex === i ? 'border-primary' : 'border-border'
+            }`}
+          >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex items-start gap-3">
-                <div className="flex flex-col gap-1">
-                  <button type="button" className="text-xs text-muted-foreground" onClick={() => move(i, -1)}>
+                <div className="flex flex-col items-center gap-1 pt-1">
+                  <span
+                    className="cursor-grab select-none text-sm text-muted-foreground active:cursor-grabbing"
+                    title="Drag to reorder"
+                    aria-hidden
+                  >
+                    ⠿
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Move up"
+                    disabled={i === 0}
+                    className="text-xs text-muted-foreground disabled:opacity-30"
+                    onClick={() => move(i, -1)}
+                  >
                     ↑
                   </button>
-                  <button type="button" className="text-xs text-muted-foreground" onClick={() => move(i, 1)}>
+                  <button
+                    type="button"
+                    aria-label="Move down"
+                    disabled={i === stages.length - 1}
+                    className="text-xs text-muted-foreground disabled:opacity-30"
+                    onClick={() => move(i, 1)}
+                  >
                     ↓
                   </button>
                 </div>
@@ -165,27 +242,40 @@ export default function LeadWorkflowPage() {
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {s.terminal
-                      ? 'Terminal stage — reopen only by permitted users.'
-                      : `Stage ${i + 1} of ${stages.length} in your current lead flow order.`}
+                      ? 'Terminal stage — can only transition back to New Lead, by permitted users.'
+                      : `Can move to any other stage. Currently step ${i + 1} of ${stages.length}.`}
                   </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <select
-                      className="h-8 rounded border border-border px-2 text-xs"
-                      value={s.behavior}
-                      onChange={(e) => updateStage(i, { behavior: e.target.value })}
-                    >
-                      <option>Default</option>
-                      <option>Quotation</option>
-                    </select>
-                    <select
-                      className="h-8 rounded border border-border px-2 text-xs"
-                      value={s.modal}
-                      onChange={(e) => updateStage(i, { modal: e.target.value })}
-                    >
-                      <option>Default</option>
-                      <option>Quote fields</option>
-                      <option>Loss reason</option>
-                    </select>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] font-medium text-muted-foreground">Behavior</span>
+                      <select
+                        className="h-8 rounded border border-border px-2 text-xs"
+                        value={s.behavior}
+                        onChange={(e) => updateStage(i, { behavior: e.target.value })}
+                        title={BEHAVIOR_OPTIONS.find((o) => o.value === s.behavior)?.hint}
+                      >
+                        {BEHAVIOR_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] font-medium text-muted-foreground">Form shown</span>
+                      <select
+                        className="h-8 rounded border border-border px-2 text-xs"
+                        value={s.modal}
+                        onChange={(e) => updateStage(i, { modal: e.target.value })}
+                        title={FORM_OPTIONS.find((o) => o.value === s.modal)?.hint}
+                      >
+                        {FORM_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                 </div>
               </div>

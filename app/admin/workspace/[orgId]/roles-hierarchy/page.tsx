@@ -5,7 +5,7 @@ import { api } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { toFormErrors } from '@/lib/form-errors'
-import { PERMISSION_GROUPS } from '@/lib/permissions'
+import { PERMISSION_GROUPS, RESOURCE_LABELS, ACTION_LABELS } from '@/lib/permissions'
 import { Modal } from '@/components/ui/modal'
 
 interface Role {
@@ -23,11 +23,17 @@ function displayName(name: string) {
   return name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+// Column order for the permission matrix — union of every action across all resources.
+const ALL_ACTIONS = Object.keys(ACTION_LABELS).filter((action) =>
+  Object.values(PERMISSION_GROUPS).some((actions) => actions.includes(action))
+)
+
 export default function RolesHierarchyPage() {
   const { toast } = useToast()
   const [roles, setRoles] = useState<Role[]>([])
   const [editing, setEditing] = useState<Role | null>(null)
   const [perms, setPerms] = useState<string[]>([])
+  const [saving, setSaving] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [hierarchy, setHierarchy] = useState<{ roleId: string; parentRoleId?: string | null }[]>([])
@@ -56,8 +62,20 @@ export default function RolesHierarchyPage() {
     setPerms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]))
   }
 
+  function applyPreset(resource: string, preset: 'none' | 'view' | 'full') {
+    const actions = PERMISSION_GROUPS[resource]
+    const resourcePerms = actions.map((a) => `${resource}:${a}`)
+    setPerms((prev) => {
+      const withoutResource = prev.filter((p) => !resourcePerms.includes(p))
+      if (preset === 'none') return withoutResource
+      if (preset === 'view') return [...withoutResource, `${resource}:read`]
+      return [...withoutResource, ...resourcePerms]
+    })
+  }
+
   async function saveRole() {
     if (!editing) return
+    setSaving(true)
     try {
       await api.put(`/roles/${editing.id}`, {
         permissions: perms,
@@ -70,6 +88,8 @@ export default function RolesHierarchyPage() {
       load()
     } catch (err) {
       toast(toFormErrors(err, 'Failed to save role').message, 'error')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -233,43 +253,119 @@ export default function RolesHierarchyPage() {
         </div>
       </section>
 
-      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing ? `Edit role: ${displayName(editing.name)}` : ''}>
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={editing ? `Edit role: ${displayName(editing.name)}` : ''}
+        size="lg"
+      >
         {editing && (
-          <div className="max-h-[60vh] space-y-4 overflow-y-auto">
+          <div className="flex flex-col">
             <p className="text-sm text-muted-foreground">
-              Update workspace permissions for this role.
+              {editing.name === 'admin'
+                ? 'The admin role always has full access and cannot be changed.'
+                : 'Choose what this role can see and do in each area. Use the presets for a quick grant, or check individual actions for fine control.'}
             </p>
-            {Object.entries(PERMISSION_GROUPS).map(([resource, actions]) => (
-              <div key={resource}>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {resource.replace(/_/g, ' ')}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {actions.map((action) => {
-                    const p = `${resource}:${action}`
-                    const on = perms.includes(p) || perms.includes('*')
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        disabled={editing.name === 'admin'}
-                        onClick={() => toggle(resource, action)}
-                        className={`rounded-md border px-2 py-1 text-xs ${
-                          on
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border text-muted-foreground'
-                        }`}
+            <fieldset
+              disabled={editing.name === 'admin'}
+              className="mt-3 max-h-[55vh] overflow-auto rounded-md border border-border disabled:opacity-60"
+            >
+              <table className="w-full min-w-[640px] border-collapse text-sm">
+                <thead className="sticky top-0 z-10 bg-card">
+                  <tr className="border-b border-border">
+                    <th className="w-56 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Area
+                    </th>
+                    {ALL_ACTIONS.map((action) => (
+                      <th
+                        key={action}
+                        className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       >
-                        {action}
-                      </button>
+                        {ACTION_LABELS[action]}
+                      </th>
+                    ))}
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Quick set
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(PERMISSION_GROUPS).map(([resource, actions]) => {
+                    const meta = RESOURCE_LABELS[resource]
+                    return (
+                      <tr key={resource} className="border-b border-border last:border-0">
+                        <td className="px-3 py-2 align-top">
+                          <p className="font-medium">{meta?.label ?? displayName(resource)}</p>
+                          {meta?.description && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">{meta.description}</p>
+                          )}
+                        </td>
+                        {ALL_ACTIONS.map((action) => {
+                          if (!actions.includes(action)) {
+                            return (
+                              <td key={action} className="px-2 py-2 text-center text-muted-foreground">
+                                —
+                              </td>
+                            )
+                          }
+                          const p = `${resource}:${action}`
+                          const on = perms.includes(p) || perms.includes('*')
+                          return (
+                            <td key={action} className="px-2 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={() => toggle(resource, action)}
+                                aria-label={`${ACTION_LABELS[action]} ${meta?.label ?? resource}`}
+                                className="h-4 w-4 cursor-pointer accent-primary"
+                              />
+                            </td>
+                          )
+                        })}
+                        <td className="px-3 py-2 text-right align-top">
+                          <div className="inline-flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => applyPreset(resource, 'none')}
+                              className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                            >
+                              None
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyPreset(resource, 'view')}
+                              className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                            >
+                              View only
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyPreset(resource, 'full')}
+                              className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                            >
+                              Full access
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     )
                   })}
-                </div>
+                </tbody>
+              </table>
+            </fieldset>
+            <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+              <p className="text-xs text-muted-foreground">
+                {perms.includes('*') ? 'All permissions' : `${perms.length} permission${perms.length === 1 ? '' : 's'} selected`}
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setEditing(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={saveRole} disabled={editing.name === 'admin' || saving}>
+                  {saving ? 'Saving…' : 'Save changes'}
+                </Button>
               </div>
-            ))}
-            <Button onClick={saveRole} disabled={editing.name === 'admin'}>
-              Save changes
-            </Button>
+            </div>
           </div>
         )}
       </Modal>

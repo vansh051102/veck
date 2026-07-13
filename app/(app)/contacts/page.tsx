@@ -21,9 +21,20 @@ interface ContactRow {
   source: string
   tags: string[]
   createdAt: string
+  leads: { id: string; stage: string; assignedTo: { fullName: string } | null }[]
+}
+
+interface OrgUser {
+  id: string
+  fullName: string
 }
 
 const SOURCES = ['Website', 'LinkedIn', 'Referral', 'Email', 'Phone', 'Other'] as const
+const ASSIGN_TABS = [
+  { key: 'all', label: 'All' },
+  { key: 'unassigned', label: 'Unassigned' },
+  { key: 'assigned', label: 'Assigned' },
+] as const
 
 const inputClass =
   'h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary'
@@ -34,10 +45,15 @@ export default function ContactsPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [assignedFilter, setAssignedFilter] = useState<(typeof ASSIGN_TABS)[number]['key']>('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [salespeople, setSalespeople] = useState<OrgUser[]>([])
+  const [assigningContact, setAssigningContact] = useState<ContactRow | null>(null)
+  const [assignForm, setAssignForm] = useState({ companyName: '', assignedToId: '' })
+  const [assignSaving, setAssignSaving] = useState(false)
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -53,6 +69,7 @@ export default function ContactsPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '50' })
       if (search.trim()) params.set('search', search.trim())
+      if (assignedFilter !== 'all') params.set('assigned', assignedFilter)
       const res = await api.get<ContactRow[]>(`/contacts?${params}`)
       setContacts(res.data ?? [])
       setTotal(res.pagination?.total ?? res.data?.length ?? 0)
@@ -61,12 +78,43 @@ export default function ContactsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search])
+  }, [page, search, assignedFilter])
 
   useEffect(() => {
     const t = setTimeout(() => void load(), search ? 300 : 0)
     return () => clearTimeout(t)
   }, [load, search])
+
+  useEffect(() => {
+    api
+      .get<OrgUser[]>('/users')
+      .then((res) => setSalespeople(res.data ?? []))
+      .catch(() => setSalespeople([]))
+  }, [])
+
+  function openAssign(contact: ContactRow) {
+    setAssigningContact(contact)
+    setAssignForm({ companyName: '', assignedToId: '' })
+  }
+
+  async function assignToSales(e: React.FormEvent) {
+    e.preventDefault()
+    if (!assigningContact) return
+    setAssignSaving(true)
+    try {
+      await api.post(`/contacts/${assigningContact.id}/assign-to-sales`, {
+        companyName: assignForm.companyName.trim(),
+        assignedToId: assignForm.assignedToId,
+      })
+      toast('Contact assigned — lead created')
+      setAssigningContact(null)
+      await load()
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Failed to assign contact', 'error')
+    } finally {
+      setAssignSaving(false)
+    }
+  }
 
   async function createContact(e: React.FormEvent) {
     e.preventDefault()
@@ -110,6 +158,27 @@ export default function ContactsPage() {
         />
       </section>
 
+      <section className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card p-1">
+        {ASSIGN_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => {
+              setPage(1)
+              setAssignedFilter(tab.key)
+            }}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+              assignedFilter === tab.key
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted/50'
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </section>
+
       <section className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-2.5 shadow-soft">
         <div className="relative min-w-[200px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -143,18 +212,19 @@ export default function ContactsPage() {
               <th className="px-3 py-2.5 font-medium">Email</th>
               <th className="px-3 py-2.5 font-medium">Source</th>
               <th className="px-3 py-2.5 font-medium">Designation</th>
+              <th className="px-3 py-2.5 font-medium">Sales assignment</th>
             </tr>
           </thead>
           <tbody>
             {loading && contacts.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
                   Loading contacts…
                 </td>
               </tr>
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
                   No contacts yet. Add database leads here for marketing outreach.
                 </td>
               </tr>
@@ -168,6 +238,19 @@ export default function ContactsPage() {
                   <td className="px-3 py-2.5 text-muted-foreground">{c.email}</td>
                   <td className="px-3 py-2.5">{c.source}</td>
                   <td className="px-3 py-2.5 text-muted-foreground">{c.designation || '—'}</td>
+                  <td className="px-3 py-2.5">
+                    {c.leads[0] ? (
+                      <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                        Assigned to {c.leads[0].assignedTo?.fullName ?? 'unassigned rep'} · {c.leads[0].stage}
+                      </span>
+                    ) : (
+                      <PermissionGate permission="contacts:edit">
+                        <Button size="sm" variant="outline" onClick={() => openAssign(c)}>
+                          Assign to sales
+                        </Button>
+                      </PermissionGate>
+                    )}
+                  </td>
                 </tr>
               ))
             )}
@@ -269,6 +352,55 @@ export default function ContactsPage() {
               </Button>
               <Button type="submit" size="sm" disabled={saving}>
                 {saving ? 'Saving…' : 'Create contact'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {assigningContact && (
+        <Modal
+          title={`Assign ${assigningContact.firstName} ${assigningContact.lastName} to sales`}
+          onClose={() => setAssigningContact(null)}
+        >
+          <form onSubmit={assignToSales} className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              Company name
+              <input
+                required
+                className={inputClass}
+                value={assignForm.companyName}
+                onChange={(e) => setAssignForm((f) => ({ ...f, companyName: e.target.value }))}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              Salesperson
+              <select
+                required
+                className={inputClass}
+                value={assignForm.assignedToId}
+                onChange={(e) => setAssignForm((f) => ({ ...f, assignedToId: e.target.value }))}
+              >
+                <option value="" disabled>
+                  Select salesperson
+                </option>
+                {salespeople.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.fullName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Creates a new lead assigned to this salesperson, with source set to your name. This
+              contact stays here, marked as assigned.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setAssigningContact(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={assignSaving}>
+                {assignSaving ? 'Assigning…' : 'Assign'}
               </Button>
             </div>
           </form>

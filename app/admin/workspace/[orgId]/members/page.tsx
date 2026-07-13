@@ -103,6 +103,21 @@ export default function MembersPage() {
     }
   }
 
+  async function quickLogin(m: Member) {
+    // ponytail: open the tab synchronously (within the click gesture) so the
+    // browser doesn't treat the post-await window.open as a popup and block it.
+    const tab = window.open('', '_blank')
+    try {
+      const res = await api.post<{ loginUrl: string }>(`/users/${m.id}/quick-login`, {})
+      const url = res.data?.loginUrl
+      if (url && tab) tab.location.href = url
+      else tab?.close()
+    } catch (err) {
+      tab?.close()
+      toast(toFormErrors(err, 'Failed to generate login link').message, 'error')
+    }
+  }
+
   function openManage(m: Member) {
     setManageFor(m)
     setSelectedReports(members.filter((x) => x.reportsToId === m.id).map((x) => x.id))
@@ -209,6 +224,13 @@ export default function MembersPage() {
                 <td className="px-3 py-2.5 text-muted-foreground">{m.territory || 'India'}</td>
                 <td className="px-3 py-2.5">
                   <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-accent hover:underline"
+                      onClick={() => quickLogin(m)}
+                    >
+                      Quick Login
+                    </button>
                     <button
                       type="button"
                       className="text-xs font-medium text-accent hover:underline"

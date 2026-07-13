@@ -9,9 +9,15 @@ interface ModalProps {
   onClose: () => void
   children: React.ReactNode
   open?: boolean
+  size?: 'default' | 'lg'
 }
 
-export function Modal({ title, onClose, children, open = true }: ModalProps) {
+const SIZE_CLASSES: Record<NonNullable<ModalProps['size']>, string> = {
+  default: 'max-w-lg',
+  lg: 'max-w-3xl',
+}
+
+export function Modal({ title, onClose, children, open = true, size = 'default' }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -37,7 +43,7 @@ export function Modal({ title, onClose, children, open = true }: ModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-lg rounded-lg border border-border bg-card shadow-modal"
+        className={`w-full ${SIZE_CLASSES[size]} rounded-lg border border-border bg-card shadow-modal`}
       >
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-base font-semibold">{title}</h2>

@@ -65,6 +65,9 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     data: {
       permissions: parsed.data.permissions,
       ...(parsed.data.description !== undefined && { description: parsed.data.description }),
+      ...(parsed.data.hierarchyLevel !== undefined && { hierarchyLevel: parsed.data.hierarchyLevel }),
+      ...(parsed.data.department !== undefined && { department: parsed.data.department }),
+      ...(parsed.data.parentRoleId !== undefined && { parentRoleId: parsed.data.parentRoleId }),
     },
   })
 
