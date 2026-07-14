@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
-import { assertTransitionAllowed, calculateSlaDeadline } from '@/lib/workflow'
+import { assertTransitionAllowed } from '@/lib/workflow'
+import { startSlaClock, closeOpenSlaClocks } from '@/lib/sla-engine'
 import {
   assertRequiredChecklistsComplete,
   createSopChecklistsForStage,
@@ -99,6 +100,19 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const isReopen = !isLossPath && !isWon && !isOrderClosed
 
   const updated = await prisma.$transaction(async (tx) => {
+    await closeOpenSlaClocks(tx, 'Lead', lead.id, now)
+    const { deadline } = await startSlaClock({
+      db: tx,
+      orgId: ctx.orgId,
+      entityType: 'Lead',
+      entityId: lead.id,
+      stage: toStage,
+      trigger: 'stage_entered',
+      department: ctx.department,
+      startAt: now,
+      fallbackHours: slaHours,
+    })
+
     const result = await tx.lead.update({
       where: { id: lead.id },
       data: {
@@ -106,7 +120,9 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
         stageChangedAt: now,
         stageChangedBy: ctx.userId,
         slaCreatedAt: now,
-        slaDeadline: calculateSlaDeadline(toStage, now, slaHours),
+        // Terminal stages have no deadline (null); keep a far-future sentinel so
+        // the required, non-nullable Lead.slaDeadline column stays satisfied.
+        slaDeadline: deadline ?? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000),
         slaBreached: false,
         ...(isLossPath && {
           status: toStage === 'Deal Lost' ? 'closed_lost' : 'disqualified',

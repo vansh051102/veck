@@ -45,6 +45,11 @@ model Organization {
   contacts           Contact[]
   masters            Master[]
   messageTemplates   MessageTemplate[]
+  slaClocks          SlaClock[]
+  slaRules           SlaRule[]
+  businessCalendars  BusinessCalendar[]
+  kpiSnapshots       KpiSnapshot[]
+  kraDefinitions     KraDefinition[]
 
   @@index([slug])
 }
@@ -136,8 +141,8 @@ model Settings {
   orgId                     String   @unique
   org                       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  slaDefaultHours           Int      @default(24)
-  slaWarningHours           Int      @default(4)
+  // ponytail: defaultCalendarId nullable — SLA math falls back to naive wall-clock when unset
+  defaultCalendarId         String?
 
   currency                  String   @default("INR")
   dateFormat                String   @default("DD/MM/YYYY")
@@ -156,6 +161,26 @@ model Settings {
   webhookUrl                String?
   webhookSecret             String?
   emailNotificationsEnabled Boolean  @default(true)
+
+  // Lead-source integrations — set from the Integrations tab, no env vars
+  // needed. `*ConfiguredBy` is the admin user who saved the key; new leads
+  // from that source are attributed to them automatically.
+  indiamartWebhookSecret    String?  @unique
+  indiamartConfiguredBy     String?
+
+  tradeindiaWebhookSecret   String?  @unique
+  tradeindiaConfiguredBy    String?
+
+  whatsappVerifyToken       String?
+  whatsappAppSecret         String?
+  whatsappPhoneNumberId     String?  @unique
+  whatsappConfiguredBy      String?
+
+  emailInboundSecret        String?  @unique
+  emailConfiguredBy         String?
+
+  justdialApiKey            String?
+  justdialConfiguredBy      String?
 
   updatedAt                 DateTime @updatedAt
   updatedBy                 String
@@ -492,6 +517,136 @@ model MessageTemplate {
 }
 
 // ============================================================================
+// SLA / KPI / KRA ACCOUNTABILITY ENGINE
+// Generic entityType+entityId pattern so future departments (Dispatch, Accounts,
+// Inventory, ...) plug in without schema changes. See lib/sla-engine.ts.
+// ============================================================================
+
+model SlaClock {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  entityType    String    // "Lead" today; future entities without schema change
+  entityId      String
+  ruleId        String?
+  rule          SlaRule?  @relation(fields: [ruleId], references: [id])
+
+  stage         String
+  trigger       String    // "stage_entered" | "quote_sent" | ...
+
+  startedAt     DateTime  @default(now())
+  pausedAt      DateTime?
+  pausedMinutes Int       @default(0)
+  endedAt       DateTime?
+
+  targetMinutes Int?      // null = data-collection-only, no breach possible
+  deadline      DateTime? // cached at start time, business-clock-adjusted
+  elapsedBusinessMinutes Int?
+
+  status        String    @default("pending")
+  // pending | completed | overdue | paused | escalated | breached | cancelled
+
+  warnedAt      DateTime?
+  escalatedAt   DateTime?
+  escalatedToId String?
+  notificationSentAt DateTime?  // tracks when email notification was sent
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([orgId, entityType, entityId])
+  @@index([orgId, status])
+  @@index([ruleId])
+}
+
+model SlaRule {
+  id                String   @id @default(uuid())
+  orgId             String
+  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  entityType        String   // "Lead"
+  department        String?  // null = applies to all departments
+  stage             String
+  trigger           String
+
+  targetMinutes     Int?     // null = data-collection-only, no breach possible
+  warningPct        Int      @default(80)
+  calendarId        String?
+  calendar          BusinessCalendar? @relation(fields: [calendarId], references: [id])
+
+  escalateToRoleId  String?
+  notifyOnWarning   Boolean  @default(true)
+  notifyOnBreach    Boolean  @default(true)
+
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  updatedBy         String
+
+  clocks            SlaClock[]
+
+  @@unique([orgId, entityType, department, stage, trigger])
+}
+
+model BusinessCalendar {
+  id            String   @id @default(uuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch        String?  // null = org default calendar
+
+  timezone      String   @default("Asia/Kolkata")
+  workingHours  Json     // { mon: {start:"09:30", end:"18:30"}, ..., sun: null }
+  holidays      String[] @default([])   // ["2026-08-15", ...]
+  halfDays      Json?                    // { "2026-12-24": {start:"09:30", end:"14:00"} }
+
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rules         SlaRule[]
+
+  @@unique([orgId, branch])
+}
+
+model KpiSnapshot {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  scopeType    String   // "user" | "department" | "branch" | "org"
+  scopeId      String
+  metric       String   // fixed catalog, see lib/kpi/metrics.ts
+  bucket       String   // "2026-07-14" | "2026-W28" | "2026-07"
+  bucketType   String   // "day" | "week" | "month"
+
+  value        Decimal  @db.Decimal(14, 2)
+  computedAt   DateTime @default(now())
+
+  @@unique([orgId, scopeType, scopeId, metric, bucket, bucketType])
+  @@index([orgId, metric, bucket])
+}
+
+model KraDefinition {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  department   String?  // null = applies org-wide
+  roleId       String?  // optional narrower scope than department
+  metric       String   // must match KpiSnapshot.metric catalog
+  label        String   // display name for dashboards, e.g. "Lead Quality"
+  weight       Int?     // optional relative importance, for future scorecards
+
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  updatedBy    String
+
+  @@index([orgId, department])
+}
+
+// ============================================================================
 // WORKSPACE ADMIN & INFRA
 // Scalar-only models (no relation fields) — kept in sync with migrations
 // 20260710000000_admin_workspace and 20260710000001_vercel_schema_fixes.
@@ -522,4 +677,24 @@ model RateLimit {
   @@unique([orgId, endpoint, windowId])
   @@index([orgId, endpoint])
   @@index([updatedAt])
+}
+
+model Notification {
+  id           String   @id @default(uuid())
+  orgId        String
+  userId       String
+  slaClockId   String?
+  leadId       String?
+  type         String   // "sla_breach" | "sla_warning" | "sla_escalation"
+  title        String
+  body         String
+  read         Boolean  @default(false)
+  readAt       DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([orgId, userId, read])
+  @@index([slaClockId])
+  @@index([leadId])
+  @@index([createdAt])
 }

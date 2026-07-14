@@ -1,34 +1,22 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { toFormErrors } from '@/lib/form-errors'
 import type { WorkflowStage } from '@/lib/workflow-stages'
-
-const BEHAVIOR_OPTIONS: { value: string; hint: string }[] = [
-  { value: 'Default', hint: 'No extra action when a lead enters this stage.' },
-  { value: 'Quotation', hint: 'Generates/attaches a quote document for the lead.' },
-  { value: 'Order Execution', hint: 'Starts order fulfillment tracking for the lead.' },
-]
-
-const FORM_OPTIONS: { value: string; hint: string }[] = [
-  { value: 'Default', hint: 'No extra fields required to enter this stage.' },
-  { value: 'Quote fields', hint: 'Asks for quote amount/items before saving.' },
-  { value: 'Loss reason', hint: 'Requires a reason before marking the lead lost.' },
-]
+import { PipelineGraph } from '@/components/admin/lead-workflow/pipeline-graph'
+import { StageList } from '@/components/admin/lead-workflow/stage-list'
+import { StageDetailPanel } from '@/components/admin/lead-workflow/stage-detail-panel'
 
 export default function LeadWorkflowPage() {
   const { toast } = useToast()
   const [stages, setStages] = useState<WorkflowStage[]>([])
-  const [name, setName] = useState('')
-  const [color, setColor] = useState('#3C82D9')
-  const [behavior, setBehavior] = useState('Default')
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [draftMode, setDraftMode] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle')
-  const dragIndex = useRef<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   function load() {
     api
@@ -50,17 +38,18 @@ export default function LeadWorkflowPage() {
       setStages(normalized)
       setSaveState('saved')
       toast('Workflow saved')
+      return normalized
     } catch (err) {
       toast(toFormErrors(err, 'Failed to save').message, 'error')
+      return null
     } finally {
       setSaving(false)
     }
   }
 
-  function addStage() {
-    if (!name.trim()) return
-    const key = name.trim().toLowerCase().replace(/\s+/g, '_')
-    if (stages.some((s) => s.key === key || s.name === name.trim())) {
+  function addStage(data: { name: string; color: string; behavior: string }) {
+    const key = data.name.trim().toLowerCase().replace(/\s+/g, '_')
+    if (stages.some((s) => s.key === key || s.name === data.name.trim())) {
       toast('Stage already exists', 'error')
       return
     }
@@ -68,16 +57,20 @@ export default function LeadWorkflowPage() {
       ...stages,
       {
         key,
-        name: name.trim(),
-        color,
+        name: data.name.trim(),
+        color: data.color,
         order: stages.length + 1,
         terminal: false,
-        behavior,
+        behavior: data.behavior,
         modal: 'Default',
         slaHours: 24,
       },
-    ])
-    setName('')
+    ]).then((saved) => {
+      if (saved) {
+        setDraftMode(false)
+        setSelectedKey(key)
+      }
+    })
   }
 
   function move(index: number, dir: -1 | 1) {
@@ -96,13 +89,14 @@ export default function LeadWorkflowPage() {
     persist(next)
   }
 
-  function updateStage(index: number, patch: Partial<WorkflowStage>) {
-    const next = stages.map((s, i) => (i === index ? { ...s, ...patch } : s))
+  function updateStage(key: string, patch: Partial<WorkflowStage>) {
+    const next = stages.map((s) => (s.key === key ? { ...s, ...patch } : s))
     persist(next)
   }
 
-  async function removeStage(index: number) {
-    const stage = stages[index]
+  async function removeStage(key: string) {
+    const stage = stages.find((s) => s.key === key)
+    if (!stage) return
     try {
       const res = await api.get<{ data?: unknown[]; pagination?: { total: number } }>(
         `/leads?stage=${encodeURIComponent(stage.name)}&limit=1`
@@ -115,11 +109,16 @@ export default function LeadWorkflowPage() {
     } catch {
       // if check fails, still allow delete attempt for empty orgs
     }
-    persist(stages.filter((_, i) => i !== index))
+    const saved = await persist(stages.filter((s) => s.key !== key))
+    if (saved) setSelectedKey(null)
   }
 
+  const selectedIndex = selectedKey ? stages.findIndex((s) => s.key === selectedKey) : -1
+  const selectedStage = selectedIndex >= 0 ? stages[selectedIndex] : null
+  const stepInfo = selectedIndex >= 0 ? { index: selectedIndex + 1, total: stages.length } : null
+
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-semibold tracking-tight">Lead Workflow</h2>
         <span className="text-xs text-muted-foreground" aria-live="polite">
@@ -132,174 +131,51 @@ export default function LeadWorkflowPage() {
         can only be reset to New Lead by permitted users.
       </p>
 
-      <div className="mt-6 flex flex-wrap items-center gap-1.5" aria-label="Pipeline preview">
-        {stages.map((s, i) => (
-          <div key={s.key} className="flex items-center gap-1.5">
-            <span
-              className="rounded-full px-3 py-1 text-xs font-medium text-white"
-              style={{ backgroundColor: s.color }}
+      <div className="mt-6">
+        <PipelineGraph stages={stages} selectedKey={selectedKey} onSelect={setSelectedKey} />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-muted-foreground">Stages</h3>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSelectedKey(null)
+                setDraftMode(true)
+              }}
             >
-              {s.name}
-            </span>
-            {i < stages.length - 1 && <span className="text-muted-foreground">→</span>}
+              + Add stage
+            </Button>
           </div>
-        ))}
-      </div>
-
-      <div className="mt-6 flex flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-4">
-        <label className="flex-1">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">Stage name</span>
-          <input
-            className="h-9 w-full rounded-md border border-border px-3 text-sm"
-            placeholder="e.g. Proforma Invoice Sent"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+          <StageList
+            stages={stages}
+            selectedKey={selectedKey}
+            onSelect={(key) => {
+              setDraftMode(false)
+              setSelectedKey(key)
+            }}
+            onReorder={reorder}
+            onMove={move}
           />
-        </label>
-        <label>
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">Color</span>
-          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-14" />
-        </label>
-        <label>
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">Behavior</span>
-          <select
-            className="h-9 rounded-md border border-border px-2 text-sm"
-            value={behavior}
-            onChange={(e) => setBehavior(e.target.value)}
-            title={BEHAVIOR_OPTIONS.find((o) => o.value === behavior)?.hint}
-          >
-            {BEHAVIOR_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.value}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button onClick={addStage} disabled={saving}>
-          + Add Stage
-        </Button>
-      </div>
+        </div>
 
-      <ul className="mt-6 space-y-3">
-        {stages.map((s, i) => (
-          <li
-            key={s.key}
-            draggable
-            onDragStart={() => {
-              dragIndex.current = i
-            }}
-            onDragOver={(e) => {
-              e.preventDefault()
-              setDragOverIndex(i)
-            }}
-            onDragLeave={() => setDragOverIndex((cur) => (cur === i ? null : cur))}
-            onDrop={(e) => {
-              e.preventDefault()
-              setDragOverIndex(null)
-              if (dragIndex.current !== null) reorder(dragIndex.current, i)
-              dragIndex.current = null
-            }}
-            onDragEnd={() => setDragOverIndex(null)}
-            className={`rounded-lg border bg-card p-4 transition-colors ${
-              dragOverIndex === i ? 'border-primary' : 'border-border'
-            }`}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className="flex flex-col items-center gap-1 pt-1">
-                  <span
-                    className="cursor-grab select-none text-sm text-muted-foreground active:cursor-grabbing"
-                    title="Drag to reorder"
-                    aria-hidden
-                  >
-                    ⠿
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="Move up"
-                    disabled={i === 0}
-                    className="text-xs text-muted-foreground disabled:opacity-30"
-                    onClick={() => move(i, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Move down"
-                    disabled={i === stages.length - 1}
-                    className="text-xs text-muted-foreground disabled:opacity-30"
-                    onClick={() => move(i, 1)}
-                  >
-                    ↓
-                  </button>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                    <span className="font-semibold">{s.name}</span>
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">Step {i + 1}</span>
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{s.behavior}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {s.terminal
-                      ? 'Terminal stage — can only transition back to New Lead, by permitted users.'
-                      : `Can move to any other stage. Currently step ${i + 1} of ${stages.length}.`}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[10px] font-medium text-muted-foreground">Behavior</span>
-                      <select
-                        className="h-8 rounded border border-border px-2 text-xs"
-                        value={s.behavior}
-                        onChange={(e) => updateStage(i, { behavior: e.target.value })}
-                        title={BEHAVIOR_OPTIONS.find((o) => o.value === s.behavior)?.hint}
-                      >
-                        {BEHAVIOR_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.value}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[10px] font-medium text-muted-foreground">Form shown</span>
-                      <select
-                        className="h-8 rounded border border-border px-2 text-xs"
-                        value={s.modal}
-                        onChange={(e) => updateStage(i, { modal: e.target.value })}
-                        title={FORM_OPTIONS.find((o) => o.value === s.modal)?.hint}
-                      >
-                        {FORM_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.value}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={s.terminal}
-                    onChange={(e) => updateStage(i, { terminal: e.target.checked })}
-                  />
-                  Terminal stage
-                </label>
-                <button
-                  type="button"
-                  className="text-xs text-destructive hover:underline"
-                  onClick={() => removeStage(i)}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
+        <StageDetailPanel
+          stage={selectedStage}
+          draftMode={draftMode}
+          stepInfo={stepInfo}
+          saving={saving}
+          onClose={() => {
+            setDraftMode(false)
+            setSelectedKey(null)
+          }}
+          onUpdate={(patch) => selectedKey && updateStage(selectedKey, patch)}
+          onDelete={() => selectedKey && removeStage(selectedKey)}
+          onCreate={addStage}
+        />
+      </div>
     </div>
   )
 }

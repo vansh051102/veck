@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { AdminSidebar } from '@/components/admin/admin-sidebar'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { useCurrentUser } from '@/lib/use-current-user'
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
@@ -23,11 +24,11 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
               ← Companies
             </Link>
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold">Workspace Settings</h1>
+              <h1 className="truncate text-sm font-medium">Workspace Settings</h1>
               <p className="text-xs text-muted-foreground">Admin › Settings</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <input
               placeholder="Search settings"
               className="crm-input h-8 w-44 text-xs"
@@ -38,6 +39,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
             >
               Open app
             </Link>
+            <ThemeToggle />
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
               {me?.fullName?.[0]?.toUpperCase() ?? 'A'}
             </div>

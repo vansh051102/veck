@@ -1,7 +1,13 @@
 jest.mock('@/lib/db', () => ({ prisma: { $transaction: jest.fn() } }))
 jest.mock('@/lib/sop-checklists', () => ({ createSopChecklistsForStage: jest.fn() }))
 jest.mock('@/lib/auto-assign', () => ({ pickAssignee: jest.fn().mockResolvedValue(null) }))
-jest.mock('@/lib/workflow', () => ({ calculateSlaDeadline: jest.fn(() => new Date('2026-01-02T00:00:00Z')) }))
+jest.mock('@/lib/sla-engine', () => ({
+  startSlaClock: jest.fn().mockResolvedValue({
+    clockId: 'clock-1',
+    deadline: new Date('2026-01-02T00:00:00Z'),
+    targetMinutes: 60,
+  }),
+}))
 
 import { createLeadWithDefaults } from '../lead-creation'
 import { prisma } from '@/lib/db'
@@ -12,8 +18,9 @@ const $transaction = (prisma as unknown as { $transaction: jest.Mock }).$transac
 
 function makeTx() {
   return {
-    lead: { findFirst: jest.fn(), create: jest.fn() },
+    lead: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn().mockResolvedValue({}) },
     timeline: { create: jest.fn().mockResolvedValue({}) },
+    settings: { findUnique: jest.fn().mockResolvedValue(null) },
   }
 }
 
@@ -58,8 +65,11 @@ describe('createLeadWithDefaults', () => {
     const createArg = tx.lead.create.mock.calls[0][0].data
     expect(createArg.stage).toBe('New Lead')
     expect(createArg.externalId).toBe('ext-123')
-    expect(createArg.slaDeadline).toEqual(new Date('2026-01-02T00:00:00Z'))
-    expect(createSopChecklistsForStage).toHaveBeenCalledWith(tx, 'new-lead', 'New Lead')
+    expect(tx.lead.update).toHaveBeenCalledWith({
+      where: { id: 'new-lead' },
+      data: { slaDeadline: new Date('2026-01-02T00:00:00Z') },
+    })
+    expect(createSopChecklistsForStage).toHaveBeenCalledWith(tx, 'new-lead', 'New Lead', undefined)
     expect(pickAssignee).toHaveBeenCalled()
   })
 

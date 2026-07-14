@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db'
 import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
 import { TERMINAL_STAGES } from '@/lib/lead-stages'
 import { secureEqual } from '@/lib/secure-compare'
+import { sendSLABreachEmail, sendSLAWarningEmail } from '@/lib/sla-email'
 
 export const GET = withErrorHandler(async (req: Request) => {
   const secret = process.env.CRON_SECRET
@@ -11,7 +12,7 @@ export const GET = withErrorHandler(async (req: Request) => {
 
   const now = new Date()
 
-  // Mark breached leads
+  // Mark breached leads (legacy Lead.slaBreached field)
   const result = await prisma.lead.updateMany({
     where: {
       slaBreached: false,
@@ -21,44 +22,131 @@ export const GET = withErrorHandler(async (req: Request) => {
     data: { slaBreached: true },
   })
 
-  // Mark breached SLA clocks and escalate
-  const breachedClocks = await prisma.slaClock.findMany({
+  // Find pending SLA clocks that haven't been notified yet
+  const pendingClocks = await prisma.slaClock.findMany({
     where: {
       status: 'pending',
       targetMinutes: { not: null },
-      deadline: { lt: now },
     },
     include: { rule: true },
   })
 
-  // Update clock status to breached
-  await prisma.slaClock.updateMany({
-    where: {
-      status: 'pending',
-      targetMinutes: { not: null },
-      deadline: { lt: now },
-    },
-    data: { status: 'breached', escalatedAt: now },
-  })
+  // Detect breaches and warnings
+  let emailsSent = 0
+  let warningsSent = 0
 
-  // Escalate breached clocks if rule has escalateToRoleId
-  const escalations = breachedClocks
-    .filter((c) => c.rule?.escalateToRoleId)
-    .map((c) => ({
-      slaClockId: c.id,
-      leadId: c.entityId,
-      escalateToRoleId: c.rule!.escalateToRoleId!,
-    }))
+  for (const clock of pendingClocks) {
+    const timeElapsed = clock.elapsedBusinessMinutes || 0
+    const target = clock.targetMinutes || 0
+    const percentUsed = (timeElapsed / target) * 100
+    const isBreached = clock.deadline && clock.deadline < now
 
-  if (escalations.length > 0) {
-    // Log escalations (phase 2: send email/slack notifications here)
-    console.log(`[SLA] ${escalations.length} breaches escalated`, escalations)
+    // Fetch lead first
+    const lead = await prisma.lead.findUnique({ where: { id: clock.entityId } })
+    if (!lead) {
+      console.warn(`[SLA] Lead not found: ${clock.entityId}`)
+      continue
+    }
+
+    // Then fetch assigned user and escalee
+    const [assignedUser, escaleeUser] = await Promise.all([
+      lead.assignedToId
+        ? prisma.user.findUnique({
+            where: { id: lead.assignedToId },
+            select: { id: true, fullName: true, email: true },
+          })
+        : Promise.resolve(null),
+      clock.rule?.escalateToRoleId
+        ? prisma.user.findFirst({
+            where: { role: clock.rule.escalateToRoleId },
+            select: { id: true, fullName: true, email: true },
+          })
+        : Promise.resolve(null),
+    ])
+
+    // HANDLE BREACH (100%+ of target reached)
+    if (isBreached && !clock.notificationSentAt) {
+      const breachedByMinutes = Math.max(0, timeElapsed - target)
+
+      // Only send to escalee if configured, otherwise to assigned user
+      const notifyUser = escaleeUser || assignedUser
+      if (notifyUser?.email) {
+        const emailResult = await sendSLABreachEmail({
+          orgId: clock.orgId,
+          slaClockId: clock.id,
+          leadId: clock.entityId,
+          leadName: lead?.companyName || 'Unknown Lead',
+          assignedToId: assignedUser?.id || '',
+          assignedToName: assignedUser?.fullName || 'Unknown',
+          managerEmail: notifyUser.email,
+          department: clock.rule?.department || null,
+          stage: clock.stage,
+          targetMinutes: target,
+          elapsedBusinessMinutes: timeElapsed,
+          breachedByMinutes,
+          slaRuleName: clock.rule?.id,
+        })
+
+        if (emailResult.success) {
+          emailsSent++
+          // Mark notification sent
+          await prisma.slaClock.update({
+            where: { id: clock.id },
+            data: { notificationSentAt: now, status: 'breached', escalatedAt: now },
+          })
+        } else {
+          console.warn(`[SLA] Email send failed for clock ${clock.id}: ${emailResult.reason}`)
+          // Still mark as breached even if email failed (don't retry infinitely)
+          await prisma.slaClock.update({
+            where: { id: clock.id },
+            data: { status: 'breached', escalatedAt: now },
+          })
+        }
+      } else {
+        // No email to send to, just mark as breached
+        await prisma.slaClock.update({
+          where: { id: clock.id },
+          data: { status: 'breached', escalatedAt: now },
+        })
+        console.log(`[SLA] Breach marked but no email sent (no manager email): ${clock.id}`)
+      }
+    }
+    // HANDLE WARNING (80%+ but not breached yet)
+    else if (!isBreached && percentUsed >= 80 && !clock.warnedAt && assignedUser?.email) {
+      const emailResult = await sendSLAWarningEmail({
+        orgId: clock.orgId,
+        slaClockId: clock.id,
+        leadId: clock.entityId,
+        leadName: lead?.companyName || 'Unknown Lead',
+        assignedToId: assignedUser.id,
+        assignedToName: assignedUser.fullName || 'Unknown',
+        managerEmail: assignedUser.email,
+        department: clock.rule?.department || null,
+        stage: clock.stage,
+        targetMinutes: target,
+        elapsedBusinessMinutes: timeElapsed,
+        breachedByMinutes: 0,
+        percentUsed,
+        slaRuleName: clock.rule?.id,
+      })
+
+      if (emailResult.success) {
+        warningsSent++
+        await prisma.slaClock.update({
+          where: { id: clock.id },
+          data: { warnedAt: now },
+        })
+      } else {
+        console.warn(`[SLA] Warning email send failed for clock ${clock.id}: ${emailResult.reason}`)
+      }
+    }
   }
 
   return successResponse({
     checkedAt: now.toISOString(),
     newlyBreached: result.count,
-    clocksBreached: breachedClocks.length,
-    escalated: escalations.length,
+    clocksProcessed: pendingClocks.length,
+    emailsSent,
+    warningsSent,
   })
 })

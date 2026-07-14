@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api-client'
 import { useToast } from '@/components/ui/toast'
-import { Button } from '@/components/ui/button'
 
 interface SLABreach {
   leadId: string
@@ -78,7 +77,7 @@ export default function SLADashboardPage() {
       return (b.elapsedBusinessMinutes || 0) - (a.elapsedBusinessMinutes || 0)
     })
 
-  const depts = Array.from(new Set(breaches.map((b) => b.department).filter(Boolean)))
+  const depts = Array.from(new Set(breaches.map((b) => b.department).filter((d) => d !== null && d !== undefined) as string[]))
   const statuses = ['breached', 'overdue', 'pending']
 
   const getStatusColor = (status: string, elapsed: number, target: number) => {

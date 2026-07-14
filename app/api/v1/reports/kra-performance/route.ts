@@ -43,7 +43,7 @@ export const GET = withErrorHandler(async (req: Request) => {
         const user = await prisma.user.findUnique({
           where: { id: snapshot.scopeId },
         })
-        scopeName = user?.name || snapshot.scopeId
+        scopeName = user?.fullName || snapshot.scopeId
       }
 
       return {

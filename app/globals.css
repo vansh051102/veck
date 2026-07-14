@@ -17,6 +17,12 @@
   --accent: 212 68% 54%; /* Pacific Edge #3C82D9 */
   --accent-foreground: 0 0% 100%;
   --highlight: 207 85% 61%; /* Electric Azure #4BA4F0 */
+  --secondary: 210 40% 94%;
+  --secondary-foreground: 210 28% 18%;
+  --success: 160 84% 30%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 40%;
+  --warning-foreground: 0 0% 100%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
   --ring: 212 68% 54%;
@@ -36,6 +42,12 @@
   --accent: 212 68% 54%;
   --accent-foreground: 0 0% 100%;
   --highlight: 207 85% 61%;
+  --secondary: 220 16% 24%;
+  --secondary-foreground: 210 20% 96%;
+  --success: 160 70% 55%;
+  --success-foreground: 160 40% 10%;
+  --warning: 38 92% 60%;
+  --warning-foreground: 38 60% 10%;
   --destructive: 0 63% 55%;
   --destructive-foreground: 0 0% 100%;
   --ring: 207 85% 61%;

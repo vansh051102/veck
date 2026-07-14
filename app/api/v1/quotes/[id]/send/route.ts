@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
-import { assertTransitionAllowed, calculateSlaDeadline } from '@/lib/workflow'
+import { assertTransitionAllowed } from '@/lib/workflow'
+import { startSlaClock, closeOpenSlaClocks } from '@/lib/sla-engine'
+import { normalizeWorkflowStages } from '@/lib/workflow-stages'
 import { SendQuoteSchema } from '@/lib/validation'
 import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 import {
@@ -59,6 +61,17 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
     }
   }
 
+  let quoteSentSlaHours: number | null | undefined
+  if (shouldAdvanceStage) {
+    const orgStages = await prisma.settings.findUnique({
+      where: { orgId: ctx.orgId },
+      select: { workflowStages: true },
+    })
+    quoteSentSlaHours = normalizeWorkflowStages(orgStages?.workflowStages).find(
+      (s) => s.name === 'Quote Sent'
+    )?.slaHours
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     const updatedQuote = await tx.quote.update({
       where: { id: quote.id },
@@ -82,6 +95,19 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 
     let updatedLead = lead
     if (shouldAdvanceStage) {
+      await closeOpenSlaClocks(tx, 'Lead', lead.id, now)
+      const { deadline } = await startSlaClock({
+        db: tx,
+        orgId: ctx.orgId,
+        entityType: 'Lead',
+        entityId: lead.id,
+        stage: 'Quote Sent',
+        trigger: 'quote_sent',
+        department: ctx.department,
+        startAt: now,
+        fallbackHours: quoteSentSlaHours,
+      })
+
       updatedLead = await tx.lead.update({
         where: { id: lead.id },
         data: {
@@ -89,7 +115,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
           stageChangedAt: now,
           stageChangedBy: ctx.userId,
           slaCreatedAt: now,
-          slaDeadline: calculateSlaDeadline('Quote Sent', now),
+          slaDeadline: deadline ?? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000),
           slaBreached: false,
           status: 'open',
           quotationNumber: lead.quotationNumber ?? quote.quoteNumber,

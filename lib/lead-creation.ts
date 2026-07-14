@@ -1,5 +1,5 @@
 import { prisma } from './db'
-import { calculateSlaDeadline } from './workflow'
+import { startSlaClock } from './sla-engine'
 import { createSopChecklistsForStage } from './sop-checklists'
 import { pickAssignee } from './auto-assign'
 import type { Prisma, Lead } from '@prisma/client'
@@ -79,6 +79,15 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
         at: now,
       }))
 
+    const orgStages = await tx.settings.findUnique({
+      where: { orgId: input.orgId },
+      select: { workflowStages: true },
+    })
+    const { normalizeWorkflowStages } = await import('./workflow-stages')
+    const newLeadSlaHours = normalizeWorkflowStages(orgStages?.workflowStages).find(
+      (s) => s.name === stage
+    )?.slaHours
+
     const created = await tx.lead.create({
       data: {
         ...(assignedToId && { assignedToId, assignedAt: now }),
@@ -94,10 +103,24 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
         stage,
         stageChangedAt: now,
         slaCreatedAt: now,
-        slaDeadline: calculateSlaDeadline(stage, now),
+        slaDeadline: new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000), // overwritten below
         createdById: input.createdById,
       },
     })
+
+    const { deadline } = await startSlaClock({
+      db: tx,
+      orgId: input.orgId,
+      entityType: 'Lead',
+      entityId: created.id,
+      stage,
+      trigger: 'stage_entered',
+      startAt: now,
+      fallbackHours: newLeadSlaHours,
+    })
+    if (deadline) {
+      await tx.lead.update({ where: { id: created.id }, data: { slaDeadline: deadline } })
+    }
 
     await createSopChecklistsForStage(tx, created.id, stage, input.creatorRole)
 

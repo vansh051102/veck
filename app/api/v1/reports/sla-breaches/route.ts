@@ -41,7 +41,7 @@ export const GET = withErrorHandler(async (req: Request) => {
   })
 
   // Fetch lead details and user info for each clock
-  const breaches: SLABreach[] = await Promise.all(
+  const breachesWithNulls = await Promise.all(
     clocks.map(async (clock) => {
       if (clock.entityType !== 'Lead') return null
 
@@ -52,8 +52,8 @@ export const GET = withErrorHandler(async (req: Request) => {
 
       if (!lead) return null
 
-      // Filter by department if specified
-      if (department && lead.department !== department) return null
+      // Filter by department if specified (from SlaRule, not Lead)
+      if (department && clock.rule?.department !== department) return null
 
       const elapsedMinutes = clock.elapsedBusinessMinutes || 0
       const targetMinutes = clock.targetMinutes || 0
@@ -61,10 +61,10 @@ export const GET = withErrorHandler(async (req: Request) => {
 
       return {
         leadId: lead.id,
-        leadName: lead.name,
+        leadName: lead.companyName,
         assignedToUserId: lead.assignedToId,
-        assignedToName: lead.assignedTo?.name || 'Unassigned',
-        department: lead.department,
+        assignedToName: lead.assignedTo?.fullName || 'Unassigned',
+        department: clock.rule?.department || null,
         stage: clock.stage,
         slaRule: clock.rule?.id || null,
         targetMinutes: clock.targetMinutes,
@@ -76,6 +76,8 @@ export const GET = withErrorHandler(async (req: Request) => {
       }
     })
   )
+
+  const breaches: SLABreach[] = breachesWithNulls.filter((b) => b !== null) as SLABreach[]
 
   const filtered = breaches.filter(Boolean) as SLABreach[]
   return successResponse(filtered)

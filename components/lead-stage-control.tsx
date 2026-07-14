@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
-import { otherStages, reasonsForStage, visibleStagesForRole } from '@/lib/lead-stages'
+import { otherStages, reasonsForStage, visibleStagesForRole, nextValidStages, isFlaggedDisqualify } from '@/lib/lead-stages'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { PermissionGate } from '@/components/permission-gate'
@@ -41,8 +41,10 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
   const [quoteError, setQuoteError] = useState<string | null>(null)
 
   const visible = me ? visibleStagesForRole(me.role) : otherStages(currentStage)
-  const nextOptions = otherStages(currentStage).filter((s) => visible.includes(s))
+  const sequenceAllowed = me?.role === 'admin' ? otherStages(currentStage) : nextValidStages(currentStage)
+  const nextOptions = sequenceAllowed.filter((s) => visible.includes(s))
   const isLossPath = targetStage === 'Deal Lost' || targetStage === 'Disqualified'
+  const isFlagged = isFlaggedDisqualify(currentStage, targetStage)
   const isHandover = targetStage === 'Qualified'
   const isQuoteSent = targetStage === 'Quote Sent'
   const isMarketing = me?.role.startsWith('marketing') ?? false
@@ -195,6 +197,12 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
         {isHandover && salesUsers.length === 0 && (
           <p className="text-xs text-muted-foreground">
             No sales users found — the lead keeps its current assignee.
+          </p>
+        )}
+        {isFlagged && (
+          <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+            Disqualifying from "{currentStage}" is flagged for the admin — real engagement already
+            happened on this lead. Double-check before confirming.
           </p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}

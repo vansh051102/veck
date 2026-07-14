@@ -141,11 +141,49 @@ export const ALL_STAGES = [
   'Disqualified',
 ] as const
 
-// Stage movement is unrestricted by graph; role gates live in lib/workflow.ts.
+// All other known stages, unrestricted by sequence — used only as a fallback
+// before role/user context has loaded. Prefer nextValidStages() once it has.
 // Access itself is role-scoped via canAccessLead() / buildOwnershipFilter().
 export function otherStages(currentStage: string): string[] {
   const current = normalizeStageName(currentStage)
   return ALL_STAGES.filter((s) => s !== current)
+}
+
+// Sales SOP: the pipeline is a sequence, not a free-for-all. Forward moves
+// follow New Lead → Contacted → Qualified → Quote Sent → Order Confirmed →
+// Order Closed. Deal Lost only exists past Quote Sent (before that there's no
+// real deal to lose). Disqualified is reachable earlier (New Lead, Contacted)
+// as the expected early-funnel exit, and later (Qualified, Quote Sent) as a
+// rarer, flagged exception — see FLAGGED_DISQUALIFY_FROM. The remaining
+// entries are reopen/handback paths already relied on elsewhere (purchase
+// handing a quote back to Qualified, reopening a closed order, resetting a
+// terminal stage back to New Lead).
+export const ALLOWED_TRANSITIONS: Record<string, readonly string[]> = {
+  'New Lead': ['Contacted', 'Disqualified'],
+  Contacted: ['Qualified', 'Disqualified'],
+  Qualified: ['Quote Sent', 'Disqualified'],
+  'Quote Sent': ['Qualified', 'Order Confirmed', 'Deal Lost', 'Disqualified'],
+  'Order Confirmed': ['Order Closed', 'Deal Lost'],
+  'Order Closed': ['Order Confirmed'],
+  'Deal Lost': ['New Lead'],
+  Disqualified: ['New Lead'],
+}
+
+// Stages a lead disqualified from are the rare, flagged exception — real
+// engagement (a requirement gathered, or a quote sent) already happened, so
+// disqualifying here wastes the salesperson's and the customer's time versus
+// catching it at New Lead/Contacted. Not blocked, just surfaced.
+export const FLAGGED_DISQUALIFY_FROM = ['Qualified', 'Quote Sent'] as const
+
+export function isFlaggedDisqualify(fromStage: string, toStage: string): boolean {
+  if (normalizeStageName(toStage) !== 'Disqualified') return false
+  return (FLAGGED_DISQUALIFY_FROM as readonly string[]).includes(normalizeStageName(fromStage))
+}
+
+// Stages a lead in `currentStage` may legally move to next, per the SOP above.
+export function nextValidStages(currentStage: string): string[] {
+  const current = normalizeStageName(currentStage)
+  return [...(ALLOWED_TRANSITIONS[current] ?? [])]
 }
 
 // Returns the stage tab labels a given role should see in the leads list nav.

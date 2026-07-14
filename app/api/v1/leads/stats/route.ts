@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db'
 import { buildOwnershipFilterAsync } from '@/lib/rbac'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
+import { isFlaggedDisqualify } from '@/lib/lead-stages'
 
 // Averages the Qualified -> Quote Sent gap across the org from STAGE_CHANGE
 // audit entries (lib/auth.ts logAudit, written by the stage-change route).
@@ -37,6 +38,34 @@ async function computeAvgQualifiedToQuoteSentHours(orgId: string): Promise<numbe
 
   if (diffsHours.length === 0) return null
   return Math.round((diffsHours.reduce((a, b) => a + b, 0) / diffsHours.length) * 10) / 10
+}
+
+// Counts leads disqualified from Qualified/Quote Sent (the flagged, late-funnel
+// exception — see lib/lead-stages.ts isFlaggedDisqualify) per salesperson, from
+// existing STAGE_CHANGE audit entries. No new tracking needed — every stage
+// change already records who did it and the from/to stage.
+async function computeFlaggedDisqualifications(orgId: string) {
+  const events = await prisma.auditLog.findMany({
+    where: { orgId, resourceType: 'Lead', action: 'STAGE_CHANGE' },
+    select: { userId: true, changes: true, timestamp: true, user: { select: { fullName: true } } },
+    orderBy: { timestamp: 'desc' },
+  })
+
+  const byUser = new Map<string, { fullName: string; count: number; lastAt: Date }>()
+  for (const event of events) {
+    const changes = event.changes as { fromStage?: string; toStage?: string } | null
+    if (!changes?.fromStage || !changes?.toStage) continue
+    if (!isFlaggedDisqualify(changes.fromStage, changes.toStage)) continue
+
+    const existing = byUser.get(event.userId)
+    if (existing) {
+      existing.count += 1
+    } else {
+      byUser.set(event.userId, { fullName: event.user.fullName, count: 1, lastAt: event.timestamp })
+    }
+  }
+
+  return Array.from(byUser.values()).sort((a, b) => b.count - a.count)
 }
 
 // GET /api/v1/leads/stats - Aggregate counts for the dashboard metric cards.
@@ -173,6 +202,7 @@ export const GET = withErrorHandler(async (req: Request) => {
       take: 10,
     })
     stats.recentQuoteSents = recentQuoteSents
+    stats.flaggedDisqualifications = await computeFlaggedDisqualifications(orgId)
   }
 
   return successResponse(stats)

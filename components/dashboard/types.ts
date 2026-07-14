@@ -25,6 +25,7 @@ export interface DashboardStats {
     stageChangedAt: string | null
     assignedTo: { fullName: string } | null
   }[]
+  flaggedDisqualifications?: { fullName: string; count: number; lastAt: string }[]
 }
 
 export interface LeadSummary {

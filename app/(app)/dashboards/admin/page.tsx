@@ -11,6 +11,7 @@ import { useDashboardData } from '@/components/dashboard/use-dashboard-data'
 import { useDashboardRoleGuard } from '@/components/dashboard/use-dashboard-role-guard'
 import { RecentLeadsCard } from '@/components/dashboard/recent-leads-card'
 import { QuotationChangesCard } from '@/components/dashboard/quotation-changes-card'
+import { FlaggedDisqualificationsCard } from '@/components/dashboard/flagged-disqualifications-card'
 import { ViewAsBanner } from '@/components/ViewAsBanner'
 
 export default function AdminDashboardPage() {
@@ -76,6 +77,10 @@ function AdminDashboardPageContent() {
       {/* Quotation changes — only shown to admins when data exists */}
       {stats?.recentQuoteSents && stats.recentQuoteSents.length > 0 && (
         <QuotationChangesCard leads={stats.recentQuoteSents} />
+      )}
+
+      {stats?.flaggedDisqualifications && stats.flaggedDisqualifications.length > 0 && (
+        <FlaggedDisqualificationsCard rows={stats.flaggedDisqualifications} />
       )}
     </div>
   )

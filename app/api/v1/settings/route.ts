@@ -24,8 +24,7 @@ const UpdateSettingsSchema = z.object({
   autoAssignmentRule: z
     .object({ rule_type: z.enum(['least_open_leads', 'round_robin']) })
     .optional(),
-  slaDefaultHours: z.number().int().positive().max(720).optional(),
-  slaWarningHours: z.number().int().positive().max(720).optional(),
+  defaultCalendarId: z.string().uuid().nullable().optional(),
   emailNotificationsEnabled: z.boolean().optional(),
   workflowStages: z.object({ stages: z.array(StageSchema).min(1) }).optional(),
   moduleAccess: z.record(z.boolean()).optional(),
@@ -110,8 +109,7 @@ export const PUT = withErrorHandler(async (req: Request) => {
       updatedBy: userId,
       autoAssignmentEnabled: parsed.data.autoAssignmentEnabled,
       autoAssignmentRule: parsed.data.autoAssignmentRule as Prisma.InputJsonValue | undefined,
-      slaDefaultHours: parsed.data.slaDefaultHours,
-      slaWarningHours: parsed.data.slaWarningHours,
+      defaultCalendarId: parsed.data.defaultCalendarId,
       emailNotificationsEnabled: parsed.data.emailNotificationsEnabled,
     },
     update: {

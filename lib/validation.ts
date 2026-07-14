@@ -288,6 +288,108 @@ export const IndiaMartWebhookSchema = z.object({
 export type IndiaMartLeadResponse = z.infer<typeof IndiaMartLeadResponseSchema>
 
 // ============================================================================
+// SENDGRID INBOUND PARSE WEBHOOK VALIDATION
+// ============================================================================
+// SendGrid posts inbound mail as multipart/form-data (or urlencoded); fields
+// below are the ones we read. See:
+// https://www.twilio.com/docs/sendgrid/for-developers/parsing-email/setting-up-the-inbound-parse-webhook
+
+export const SendGridInboundSchema = z.object({
+  from: z.string().min(1, 'from is required'),
+  to: z.string().optional(),
+  subject: z.string().optional(),
+  text: z.string().optional(),
+  html: z.string().optional(),
+  envelope: z.string().optional(),
+})
+
+export type SendGridInboundInput = z.infer<typeof SendGridInboundSchema>
+
+// ============================================================================
+// JUST DIAL LEAD MANAGER VALIDATION (pull API)
+// ============================================================================
+// Mirrors a single lead entry from JustDial's Lead Manager API response.
+
+export const JustDialLeadSchema = z.object({
+  lead_id: z.string().min(1),
+  name: z.string().default('JustDial Buyer'),
+  mobile: z.string().optional(),
+  email: z.string().optional(),
+  company_name: z.string().optional(),
+  city: z.string().optional(),
+  message: z.string().optional(),
+  category: z.string().optional(),
+  received_at: z.string().optional(),
+}).refine((data) => Boolean(data.mobile || data.email), {
+  message: 'Either mobile or email must be present',
+})
+
+export type JustDialLead = z.infer<typeof JustDialLeadSchema>
+
+// ============================================================================
+// TRADEINDIA WEBHOOK VALIDATION (push API)
+// ============================================================================
+// ponytail: TradeIndia's exact push-webhook payload isn't confirmed yet —
+// field names are a best-effort guess mirroring IndiaMART's shape (the two
+// B2B marketplaces publish similar lead fields). Tighten once real payloads
+// are seen from TradeIndia's dashboard.
+
+export const TradeIndiaLeadSchema = z
+  .object({
+    QUERY_ID: z.string().min(1),
+    SENDER_NAME: z.string().default('TradeIndia Buyer'),
+    SENDER_MOBILE: z.string().optional(),
+    SENDER_EMAIL: z.string().optional(),
+    SENDER_COMPANY: z.string().optional(),
+    SENDER_CITY: z.string().optional(),
+    SENDER_STATE: z.string().optional(),
+    PRODUCT_NAME: z.string().optional(),
+    QUERY_MESSAGE: z.string().optional(),
+  })
+  .refine((data) => Boolean(data.SENDER_MOBILE || data.SENDER_EMAIL), {
+    message: 'Either SENDER_MOBILE or SENDER_EMAIL must be present',
+  })
+
+export type TradeIndiaLead = z.infer<typeof TradeIndiaLeadSchema>
+
+// ============================================================================
+// WHATSAPP BUSINESS (Meta Cloud API) WEBHOOK VALIDATION
+// ============================================================================
+// Mirrors the subset of Meta's Cloud API "messages" webhook payload we read
+// to capture an inbound WhatsApp message as a lead.
+// See: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks
+
+const WhatsAppContactSchema = z.object({
+  profile: z.object({ name: z.string().optional() }).optional(),
+  wa_id: z.string(),
+})
+
+const WhatsAppMessageSchema = z.object({
+  from: z.string(),
+  id: z.string(),
+  timestamp: z.string().optional(),
+  type: z.string(),
+  text: z.object({ body: z.string() }).optional(),
+})
+
+export const WhatsAppWebhookSchema = z.object({
+  entry: z.array(
+    z.object({
+      changes: z.array(
+        z.object({
+          value: z.object({
+            contacts: z.array(WhatsAppContactSchema).optional(),
+            messages: z.array(WhatsAppMessageSchema).optional(),
+          }),
+        })
+      ),
+    })
+  ),
+})
+
+export type WhatsAppWebhookInput = z.infer<typeof WhatsAppWebhookSchema>
+
+// ============================================================================
 // ASSIGNMENT RULE VALIDATION
 // ============================================================================
 // Workspace-level auto-assignment rules (admin-only). A rule matches a newly
