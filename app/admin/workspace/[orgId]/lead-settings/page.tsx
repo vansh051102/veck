@@ -6,12 +6,13 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { toFormErrors } from '@/lib/form-errors'
 import { AssignmentRulesModal } from '@/components/assignment-rules-modal'
+import { SlaRulesModal } from '@/components/admin/sla-rules-modal'
+import { OperatingHoursModal } from '@/components/admin/operating-hours-modal'
+import { KraDefinitionsModal } from '@/components/admin/kra-definitions-modal'
 
 interface Settings {
   autoAssignmentEnabled: boolean
   autoAssignmentRule: { rule_type: 'least_open_leads' | 'round_robin' } | null
-  slaDefaultHours: number
-  slaWarningHours: number
   emailNotificationsEnabled: boolean
 }
 
@@ -19,6 +20,9 @@ export default function LeadSettingsPage() {
   const { toast } = useToast()
   const [settings, setSettings] = useState<Settings | null>(null)
   const [showRules, setShowRules] = useState(false)
+  const [showSlaRules, setShowSlaRules] = useState(false)
+  const [showCalendars, setShowCalendars] = useState(false)
+  const [showKras, setShowKras] = useState(false)
 
   function load() {
     api
@@ -91,25 +95,24 @@ export default function LeadSettingsPage() {
 
       <section className="rounded-lg border border-border bg-card p-5">
         <h3 className="font-semibold">SLA</h3>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-sm">
-            <span className="mb-1 block text-xs text-muted-foreground">Default SLA (hours)</span>
-            <input
-              type="number"
-              className="h-9 w-full rounded-md border border-border px-3"
-              value={settings.slaDefaultHours}
-              onChange={(e) => update({ slaDefaultHours: Number(e.target.value) })}
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-xs text-muted-foreground">Warning (hours)</span>
-            <input
-              type="number"
-              className="h-9 w-full rounded-md border border-border px-3"
-              value={settings.slaWarningHours}
-              onChange={(e) => update({ slaWarningHours: Number(e.target.value) })}
-            />
-          </label>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Default per-stage SLA hours are configured in{' '}
+          <a href="../lead-workflow" className="underline">
+            Lead Workflow
+          </a>
+          . Rules below override that default per department/stage — leave a rule&apos;s target
+          blank to collect timing data without enforcing a breach.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setShowSlaRules(true)}>
+            Manage SLA rules
+          </Button>
+          <Button variant="outline" onClick={() => setShowCalendars(true)}>
+            Manage operating hours
+          </Button>
+          <Button variant="outline" onClick={() => setShowKras(true)}>
+            Manage Key Result Areas
+          </Button>
         </div>
       </section>
 
@@ -126,6 +129,9 @@ export default function LeadSettingsPage() {
       </section>
 
       {showRules && <AssignmentRulesModal onClose={() => setShowRules(false)} />}
+      {showSlaRules && <SlaRulesModal onClose={() => setShowSlaRules(false)} />}
+      {showCalendars && <OperatingHoursModal onClose={() => setShowCalendars(false)} />}
+      {showKras && <KraDefinitionsModal onClose={() => setShowKras(false)} />}
     </div>
   )
 }
