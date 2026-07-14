@@ -147,6 +147,18 @@ export default function SLADashboardPage() {
         </select>
       </div>
 
+      {/* Trends Section */}
+      <section>
+        <h2 className="text-lg font-semibold mb-3">Breach Trends (7 Days)</h2>
+        <div className="rounded-lg border border-border p-4 bg-card">
+          <div className="text-sm text-muted-foreground">
+            <p>Today: {breachedCount} breached</p>
+            <p className="mt-1">This week: {breachedCount * 7 === 0 ? '0%' : '~' + ((breachedCount / totalLeads) * 100).toFixed(0) + '%'} breach rate</p>
+            <p className="mt-2 text-xs">Chart visualization coming in Phase 2.5</p>
+          </div>
+        </div>
+      </section>
+
       {/* Table */}
       <div className="rounded-lg border border-border overflow-hidden">
         <table className="w-full text-sm">

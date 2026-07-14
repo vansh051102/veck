@@ -3,15 +3,6 @@ import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-
 import { TERMINAL_STAGES } from '@/lib/lead-stages'
 import { secureEqual } from '@/lib/secure-compare'
 
-// GET /api/v1/cron/sla-check - Flag leads whose SLA deadline has passed.
-//
-// Server-to-server endpoint, intended to be hit on a schedule (Vercel Cron,
-// GitHub Actions, or any external scheduler). Secured by CRON_SECRET:
-//   Authorization: Bearer <CRON_SECRET>
-// Vercel Cron sends this header automatically when CRON_SECRET is set.
-//
-// Idempotent: only flips slaBreached false -> true; already-breached and
-// terminal-stage leads are untouched.
 export const GET = withErrorHandler(async (req: Request) => {
   const secret = process.env.CRON_SECRET
   if (!secret || !secureEqual(req.headers.get('authorization') ?? '', `Bearer ${secret}`)) {
@@ -19,6 +10,8 @@ export const GET = withErrorHandler(async (req: Request) => {
   }
 
   const now = new Date()
+
+  // Mark breached leads
   const result = await prisma.lead.updateMany({
     where: {
       slaBreached: false,
@@ -28,5 +21,44 @@ export const GET = withErrorHandler(async (req: Request) => {
     data: { slaBreached: true },
   })
 
-  return successResponse({ checkedAt: now.toISOString(), newlyBreached: result.count })
+  // Mark breached SLA clocks and escalate
+  const breachedClocks = await prisma.slaClock.findMany({
+    where: {
+      status: 'pending',
+      targetMinutes: { not: null },
+      deadline: { lt: now },
+    },
+    include: { rule: true },
+  })
+
+  // Update clock status to breached
+  await prisma.slaClock.updateMany({
+    where: {
+      status: 'pending',
+      targetMinutes: { not: null },
+      deadline: { lt: now },
+    },
+    data: { status: 'breached', escalatedAt: now },
+  })
+
+  // Escalate breached clocks if rule has escalateToRoleId
+  const escalations = breachedClocks
+    .filter((c) => c.rule?.escalateToRoleId)
+    .map((c) => ({
+      slaClockId: c.id,
+      leadId: c.entityId,
+      escalateToRoleId: c.rule!.escalateToRoleId!,
+    }))
+
+  if (escalations.length > 0) {
+    // Log escalations (phase 2: send email/slack notifications here)
+    console.log(`[SLA] ${escalations.length} breaches escalated`, escalations)
+  }
+
+  return successResponse({
+    checkedAt: now.toISOString(),
+    newlyBreached: result.count,
+    clocksBreached: breachedClocks.length,
+    escalated: escalations.length,
+  })
 })
