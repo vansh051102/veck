@@ -16,6 +16,8 @@ interface Role {
   hierarchyLevel: number
   department: string | null
   parentRoleId: string | null
+  maxExportLimitDaily: number
+  maskPiiData: boolean
   memberCount?: number
 }
 
@@ -82,6 +84,8 @@ export default function RolesHierarchyPage() {
         description: editing.description,
         hierarchyLevel: editing.hierarchyLevel,
         parentRoleId: editing.parentRoleId,
+        maxExportLimitDaily: editing.maxExportLimitDaily,
+        maskPiiData: editing.maskPiiData,
       })
       toast('Role updated')
       setEditing(null)
@@ -240,8 +244,7 @@ export default function RolesHierarchyPage() {
             <div key={role.id} className="flex flex-col items-center">
               {i > 0 && <div className="h-4 w-px bg-border" />}
               <div
-                className="rounded-full border border-border bg-sky-mist/40 px-4 py-1.5 text-sm font-medium"
-                style={{ backgroundColor: 'hsl(210 40% 96%)' }}
+                className="rounded-full border border-border bg-sky-mist/40 px-4 py-1.5 text-sm font-medium text-foreground"
               >
                 {displayName(role.name)}
               </div>
@@ -353,6 +356,31 @@ export default function RolesHierarchyPage() {
                 </tbody>
               </table>
             </fieldset>
+            <div className="mt-4 flex flex-wrap items-center gap-6 border-t border-border pt-3">
+              <label className="flex items-center gap-2 text-sm">
+                Daily export limit
+                <input
+                  type="number"
+                  min={0}
+                  value={editing.maxExportLimitDaily}
+                  onChange={(e) =>
+                    setEditing({ ...editing, maxExportLimitDaily: Math.max(0, Number(e.target.value)) })
+                  }
+                  disabled={editing.name === 'admin'}
+                  className="h-8 w-24 rounded-md border border-border px-2 text-sm disabled:opacity-60"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={editing.maskPiiData}
+                  onChange={(e) => setEditing({ ...editing, maskPiiData: e.target.checked })}
+                  disabled={editing.name === 'admin'}
+                  className="h-4 w-4 cursor-pointer accent-primary disabled:opacity-60"
+                />
+                Mask phone/email/GST in exports
+              </label>
+            </div>
             <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
               <p className="text-xs text-muted-foreground">
                 {perms.includes('*') ? 'All permissions' : `${perms.length} permission${perms.length === 1 ? '' : 's'} selected`}

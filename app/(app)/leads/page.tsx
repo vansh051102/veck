@@ -45,6 +45,17 @@ const DAY_FILTERS = [
   { label: '4 months', value: '120' },
 ]
 
+const LEAD_SOURCES = ['Website', 'LinkedIn', 'Referral', 'Email', 'Phone', 'Other']
+const WEEKDAYS = [
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+  { value: 7, label: 'Sun' },
+]
+
 interface LeadStats {
   total: number
   open: number
@@ -66,6 +77,9 @@ export default function LeadsPage() {
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [showNewLead, setShowNewLead] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showExportOptions, setShowExportOptions] = useState(false)
+  const [exportSources, setExportSources] = useState<Set<string>>(new Set())
+  const [exportWeekdays, setExportWeekdays] = useState<Set<number>>(new Set())
   const [showRules, setShowRules] = useState(false)
   const [showCustomRange, setShowCustomRange] = useState(false)
   const [leads, setLeads] = useState<LeadRow[]>([])
@@ -337,7 +351,27 @@ export default function LeadsPage() {
   }
 
   function handleExport() {
-    window.location.href = `/api/v1/leads/export?${buildFilterParams().toString()}`
+    const params = buildFilterParams()
+    exportSources.forEach((s) => params.append('source', s))
+    exportWeekdays.forEach((d) => params.append('weekday', String(d)))
+    window.location.href = `/api/v1/leads/export?${params.toString()}`
+    setShowExportOptions(false)
+  }
+
+  function toggleExportSource(source: string) {
+    setExportSources((prev) => {
+      const next = new Set(prev)
+      next.has(source) ? next.delete(source) : next.add(source)
+      return next
+    })
+  }
+
+  function toggleExportWeekday(day: number) {
+    setExportWeekdays((prev) => {
+      const next = new Set(prev)
+      next.has(day) ? next.delete(day) : next.add(day)
+      return next
+    })
   }
 
   async function loadMore() {
@@ -529,7 +563,7 @@ export default function LeadsPage() {
               </PermissionGate>
               <PermissionGate permission="leads:export">
                 <DropdownMenu.Item
-                  onSelect={handleExport}
+                  onSelect={() => setShowExportOptions(true)}
                   className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-muted"
                 >
                   <Download className="h-3.5 w-3.5" />
@@ -746,6 +780,52 @@ export default function LeadsPage() {
 
       {showImport && <LeadsImportModal onClose={() => setShowImport(false)} onImported={refresh} />}
       {showRules && <AssignmentRulesModal onClose={() => setShowRules(false)} />}
+
+      {showExportOptions && (
+        <Modal title="Export leads" onClose={() => setShowExportOptions(false)}>
+          <div className="space-y-4">
+            <div>
+              <p className="mb-2 text-sm font-medium text-foreground">Sources (leave empty for all)</p>
+              <div className="flex flex-wrap gap-2">
+                {LEAD_SOURCES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggleExportSource(s)}
+                    className={cn('crm-chip', exportSources.has(s) ? 'crm-chip-active' : 'crm-chip-idle')}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-medium text-foreground">Days of week (leave empty for all)</p>
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAYS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => toggleExportWeekday(d.value)}
+                    className={cn('crm-chip', exportWeekdays.has(d.value) ? 'crm-chip-active' : 'crm-chip-idle')}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setShowExportOptions(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleExport}>
+                <Download className="h-3.5 w-3.5" />
+                Export CSV
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

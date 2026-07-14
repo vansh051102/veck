@@ -22,6 +22,8 @@ const UpdateRoleSchema = z.object({
   hierarchyLevel: z.number().int().min(0).optional(),
   department: z.string().nullable().optional(),
   parentRoleId: z.string().uuid().nullable().optional(),
+  maxExportLimitDaily: z.number().int().min(0).optional(),
+  maskPiiData: z.boolean().optional(),
 })
 
 // GET /api/v1/roles/:id - Get a single role
@@ -68,6 +70,8 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
       ...(parsed.data.hierarchyLevel !== undefined && { hierarchyLevel: parsed.data.hierarchyLevel }),
       ...(parsed.data.department !== undefined && { department: parsed.data.department }),
       ...(parsed.data.parentRoleId !== undefined && { parentRoleId: parsed.data.parentRoleId }),
+      ...(parsed.data.maxExportLimitDaily !== undefined && { maxExportLimitDaily: parsed.data.maxExportLimitDaily }),
+      ...(parsed.data.maskPiiData !== undefined && { maskPiiData: parsed.data.maskPiiData }),
     },
   })
 
