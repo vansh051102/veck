@@ -7,6 +7,7 @@ import { isAuthDisabled } from '@/lib/dev-auth'
 const PUBLIC_ROUTES = [
   '/auth/login',
   '/auth/signup',
+  '/auth/callback',
   '/auth/forgot-password',
   '/auth/inactive',
   '/api/v1/auth/signup',

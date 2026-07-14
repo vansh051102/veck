@@ -25,7 +25,7 @@ export const POST = withErrorHandler(async (req, { params }: { params: { id: str
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: 'magiclink',
     email: target.email,
-    options: { redirectTo: `${appUrl}/dashboard` },
+    options: { redirectTo: `${appUrl}/auth/callback?next=/dashboard` },
   })
   if (error || !data?.properties?.action_link) {
     throw new InternalServerError('Failed to generate login link')
