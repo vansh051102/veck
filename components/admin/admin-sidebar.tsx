@@ -36,6 +36,12 @@ const SECTIONS: { title: string; items: { href: string; label: string }[] }[] = 
       { href: 'engine-platform', label: 'Engine Platform' },
     ],
   },
+  {
+    title: 'Monitoring',
+    items: [
+      { href: 'sla-dashboard', label: 'SLA Dashboard' },
+    ],
+  },
 ]
 
 export function AdminSidebar({ orgId }: { orgId: string }) {
@@ -52,8 +58,8 @@ export function AdminSidebar({ orgId }: { orgId: string }) {
       </div>
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         {SECTIONS.map((section) => (
-          <div key={section.title} className="mb-4">
-            <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div key={section.title} className="mb-3">
+            <p className="mb-1 px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
               {section.title}
             </p>
             <ul className="space-y-0.5">
@@ -65,7 +71,7 @@ export function AdminSidebar({ orgId }: { orgId: string }) {
                     <Link
                       href={href}
                       className={cn(
-                        'block rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors',
+                        'block rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors',
                         active
                           ? 'bg-primary text-primary-foreground'
                           : 'text-foreground/80 hover:bg-muted'
