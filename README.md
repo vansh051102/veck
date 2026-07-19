@@ -1,8 +1,10 @@
 # VECK - Steel Trading CRM Operating System
 
 **Project:** Process-driven steel trading CRM with ERP capabilities  
-**Status:** Phase 0 - Foundation Setup  
+**Status:** Phase 1 (CRM & Sales) complete — Phase 2 (Trading ERP) not started  
 **Stack:** Next.js 14, TypeScript, React, Tailwind CSS, Prisma, PostgreSQL (Supabase)
+
+For what's built today see **[FEATURES.md](FEATURES.md)**; for live task status see **[VECK_Feature_Backlog_Progress_List.md](VECK_Feature_Backlog_Progress_List.md)**.
 
 ## 🎯 Overview
 
@@ -31,7 +33,7 @@ VECK is a technology-first operating system for steel trading businesses. It sta
 
 ```bash
 # Clone repo
-git clone https://github.com/yourusername/veck.git
+git clone https://github.com/vansh051102/veck.git
 cd veck
 
 # Install dependencies
@@ -44,6 +46,8 @@ cp .env.example .env.local
 npm run dev
 ```
 
+Full setup — env vars, Supabase, database — in **[docs/SETUP.md](docs/SETUP.md)**.
+
 ## 📋 Architecture
 
 - **Frontend:** Next.js App Router, React, Tailwind CSS, shadcn/ui
@@ -53,42 +57,38 @@ npm run dev
 - **State:** Zustand
 - **Forms:** React Hook Form
 - **UI Tables:** TanStack Table
-- **Auth:** Supabase Auth (JWT)
+- **Auth:** Supabase Auth (JWT) + custom RBAC (`lib/rbac.ts`, `lib/permissions.ts`)
+- **Validation:** Zod
+- **PDFs:** pdf-lib (quotations) · **Email:** Resend · **Logging:** pino
 - **Hosting:** Vercel (frontend), Supabase (backend)
-- **Storage:** Cloudflare R2
 
 ## 📂 Project Structure
 
 ```
 veck/
-├── app/                    # Next.js app directory
-│   ├── api/               # API routes
-│   ├── auth/              # Auth pages
-│   ├── dashboard/         # Dashboard
-│   ├── admin/             # Admin portal
-│   └── layout.tsx
-├── components/            # React components
-│   ├── layout/
-│   ├── common/
-│   ├── forms/
-│   ├── leads/
-│   └── admin/
-├── lib/                   # Utilities
-│   ├── api-client.ts
-│   ├── auth.ts
-│   ├── db.ts
-│   ├── permissions.ts
-│   ├── validation.ts
-│   └── utils.ts
-├── hooks/                 # Custom hooks
-├── stores/                # Zustand stores
-├── styles/                # CSS
+├── app/
+│   ├── (app)/             # Authenticated app (leads, dashboards, analytics)
+│   ├── admin/             # Admin portal + per-org workspace
+│   ├── api/v1/            # REST API (62 routes)
+│   └── auth/              # Login, signup, callback
+├── components/
+│   ├── admin/  analytics/  auth/  dashboard/
+│   └── ui/                # shadcn/ui primitives
+├── lib/                   # Business logic
+│   ├── rbac.ts  permissions.ts   # Access control
+│   ├── lead-creation.ts  auto-assign.ts  lead-stages.ts
+│   ├── sla-engine.ts  sop-checklists.ts  follow-up.ts
+│   ├── quote-pdf.ts  numbering.ts
+│   ├── integrations/      # JustDial poller
+│   └── __tests__/         # Unit tests (Jest)
+├── e2e/                   # End-to-end tests (Playwright)
 ├── prisma/
-│   ├── schema.prisma
+│   ├── schema.prisma      # Schema single source of truth
 │   └── migrations/
-├── docs/                  # Documentation
-├── tests/                 # Test files
-└── public/                # Static assets
+├── scripts/
+├── src/                   # Phase 2 ERP WIP — excluded from build
+├── docs/
+└── public/
 ```
 
 ## 🔑 Key Features (Phase 0)
@@ -103,11 +103,25 @@ veck/
 
 ## 📚 Documentation
 
-- [Architecture](./docs/ARCHITECTURE.md)
-- [API Reference](./docs/API.md)
-- [Database Schema](./docs/DATABASE.md)
-- [Setup Guide](./docs/SETUP.md)
-- [Implementation Plan](./IMPLEMENTATION_PLAN.md)
+Each document has one job — status lives in the backlog, spec lives in the plan, schema lives in Prisma.
+
+**Product & status**
+- [Features](./FEATURES.md) — what's built today, and what only looks built
+- [Feature & Bug Backlog](./VECK_Feature_Backlog_Progress_List.md) — live task status
+- [Implementation Plan](./IMPLEMENTATION_PLAN.md) — master technical spec
+- [Roadmap](./ROADMAP.md) — phase summary
+
+**Engineering**
+- [Architecture](./docs/ARCHITECTURE.md) — stack, request flow, ingestion, background jobs
+- [API Reference](./docs/API.md) — endpoint contracts
+- [Database](./docs/DATABASE.md) → [`prisma/schema.prisma`](./prisma/schema.prisma)
+- [Setup Guide](./docs/SETUP.md) — local development
+- [Database Migrations](./docs/database-migrations.md) — **read before running any migration**
+- [Deployment](./docs/DEPLOYMENT.md) — env vars, cron, rollback
+- [CLAUDE.md](./CLAUDE.md) — engineering guidelines for AI-assisted changes
+
+**Team**
+- [Sales SOP Guide](./docs/SOP_GUIDE.md) — for the sales team
 
 ## 👥 Team
 
