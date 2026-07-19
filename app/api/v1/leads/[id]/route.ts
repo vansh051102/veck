@@ -112,7 +112,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     const timeline = await prisma.timeline.upsert({
       where: { leadId: lead.id },
       update: {},
-      create: { leadId: lead.id },
+      create: { leadId: lead.id, orgId: lead.orgId },
     })
 
     const changesSummary = Object.entries(changedFields)

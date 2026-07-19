@@ -65,7 +65,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 
   const lead = await prisma.lead.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
-    select: { id: true, companyName: true },
+    select: { id: true, companyName: true, orgId: true },
   })
   if (!lead) throw new NotFoundError('Lead')
 
@@ -108,7 +108,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
 
     const timeline = await tx.timeline.upsert({
       where: { leadId: lead.id },
-      create: { leadId: lead.id },
+      create: { leadId: lead.id, orgId: lead.orgId },
       update: {},
     })
     await tx.timelineEvent.create({

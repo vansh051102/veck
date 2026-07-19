@@ -50,6 +50,7 @@ model Organization {
   businessCalendars  BusinessCalendar[]
   kpiSnapshots       KpiSnapshot[]
   kraDefinitions     KraDefinition[]
+  timelines          Timeline[]
 
   @@index([slug])
 }
@@ -357,6 +358,8 @@ model ChecklistItem {
 
 model Timeline {
   id        String          @id @default(uuid())
+  orgId     String
+  org       Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   leadId    String          @unique
   lead      Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
   events    TimelineEvent[]
@@ -365,6 +368,7 @@ model Timeline {
   updatedAt DateTime        @updatedAt
 
   @@index([leadId])
+  @@index([orgId])
 }
 
 model TimelineEvent {

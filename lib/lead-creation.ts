@@ -27,6 +27,7 @@ export type CreateLeadResult =
       duplicate: true
       existingLead: {
         id: string
+        orgId: string
         companyName: string
         stage: string
         assignedTo: { fullName: string } | null
@@ -59,6 +60,7 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
       },
       select: {
         id: true,
+        orgId: true,
         companyName: true,
         stage: true,
         assignedTo: { select: { fullName: true } },
@@ -126,6 +128,7 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
 
     await tx.timeline.create({
       data: {
+        orgId: input.orgId,
         leadId: created.id,
         events: {
           create: {
