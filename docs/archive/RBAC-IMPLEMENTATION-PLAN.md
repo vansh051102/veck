@@ -1,6 +1,6 @@
 # RBAC Implementation Plan — VECK
 
-> **Status:** In Progress
+> **Status:** Shipped — archived (RBAC landed at `c952042`; see backlog Phase 0 #1)
 > **Date:** July 2026
 > **Scope:** Role-Based Access Control with Department + Ownership scoping
 

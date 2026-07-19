@@ -1,6 +1,6 @@
 # VECK CRM — Feature & Bug Backlog (Dependency-Ordered)
 
-Last updated: 2026-07-07 (Phase 0 re-audited against `c952042` RBAC commit)
+Last updated: 2026-07-19 (re-audited against HEAD `c2ae438`)
 
 Status key: **[DONE]** verified in code · **[PARTIAL]** some scaffolding exists but incomplete/not wired up · **[NOT STARTED]** no evidence in code. Verified against the actual codebase in this project on 2026-07-05.
 
@@ -17,7 +17,7 @@ Everything downstream (stage visibility, dashboards, performance tabs, import/ex
 1. [DONE] Clean up RBAC and team management properly — single source of truth for role → permission mapping. As of `c952042`: `lib/rbac.ts` defines `PERMISSIONS`/`ROLE_PERMISSIONS`, `Role.permissions` (Json) is the real source of truth per-org, all 28 API routes call `requirePermission()`/`requireAnyPermission()`, and `buildOwnershipFilter()`/`canAccessLead()` scope queries by role+department+ownership. `middleware.ts` still only does session/admin-route/active-status checks, but that's now correct — fine-grained permission checks live in the route handlers, not middleware.
 2. [DONE] Fix job title / "Workspace Owner" label showing incorrectly for the Purchase role. No hardcoded "Workspace Owner" string exists anywhere in the codebase now; `designation` is a free-text field on `User`, set explicitly in Settings and rendered as-is in the topbar (`components/topbar.tsx`) and dashboard header — resolves from the role/user record, not a hardcoded label.
 3. [NOT STARTED] Add the second Admin user as a member/owner (Admin role). This is a data/seed action, not a code gap — user management UI to do it now exists in Settings.
-4. [PARTIAL] Role access review — confirm each of the 5 roles maps to the correct permission set end to end. Code gap found: the implemented role set is `admin, marketing_manager, marketing_executive, sales_manager, sales_executive, purchase` — there is no combined **"Sales / Purchase"** role, even though some users need dual Sales+Purchase access. Today they'd have to be assigned one or the other, losing permissions/visibility from the other side. Needs either a real dual role or a way to grant a user permissions from two roles.
+4. [DONE] Role access review — each role maps to a permission set end to end. The combined **"Sales / Purchase"** dual role now exists: `sales_purchase` is defined in `lib/permissions.ts:214` (`ROLE_PERMISSIONS`) alongside `admin, marketing_manager, marketing_executive, sales_manager, sales_executive, purchase`, and gets a dedicated dashboard (`app/(app)/dashboards/sales-purchase/page.tsx`). Users needing both Sales and Purchase access are assigned this role rather than losing one side.
 5. [DONE] Only the stages relevant to a user's role should appear in their stage dropdown/upper navigation. `lib/lead-stages.ts:visibleStagesForRole()` returns `['Qualified', 'Quote Sent']` for `purchase` and all 7 stages for everyone else; wired into both `app/(app)/leads/page.tsx` and `app/(app)/dashboard/page.tsx` stage tabs.
 6. [PARTIAL] Stage configuration by role: e.g. Qualified → Quote Sent belongs to Purchase; all other stage transitions belong to Sales. The *visibility* half is done (see #5), and `buildOwnershipFilter()`/`canAccessLead()` scope Purchase to leads in `Qualified`/`Quote Sent`. But stage-transition permissions themselves aren't separately gated — no check stops a Sales user from also performing the Qualified→Quote Sent transition. Still hardcoded to the two named stages rather than configurable data.
 7. [DONE] Export function restricted to Admin only. `LEADS_EXPORT` is not granted to any role in `ROLE_PERMISSIONS` except admin's wildcard `'*'`, and `app/api/v1/leads/export/route.ts` calls `requirePermission(userId, PERMISSIONS.LEADS_EXPORT)` — effectively admin-only today, driven by data not a special-cased check.
@@ -25,6 +25,7 @@ Everything downstream (stage visibility, dashboards, performance tabs, import/ex
 9. [DONE] Don't give general import access — allow manual lead creation only for roles without import rights. Falls out of #8: only admin has `LEADS_IMPORT`; every role that lacks it still has `LEADS_CREATE` for manual entry.
 10. [NOT STARTED] Assignment rules not saving correctly — fix persistence bug. `PUT /api/v1/settings` upserts `autoAssignmentEnabled`/`autoAssignmentRule` cleanly in `app/api/v1/settings/route.ts` — no bug found in the persistence path itself. Original report likely predates this or is a live UI repro; needs a fresh repro against current code before closing.
 11. [NOT STARTED] When Admin clicks into any user whose role is Sales or Sales/Purchase, it should land on that person's dashboard view for their role, not the admin view. No impersonation/"view as" feature exists anywhere in the codebase (searched for `impersonat`, `view-as`, `viewAs`). `ROLE_DEFAULTS` in `app/auth/login/page.tsx` only routes a user to their *own* default page at login time — there's no admin-clicks-into-user flow at all yet.
+12. [DONE] Role-based export controls + PII masking on lead export. `app/api/v1/leads/export/route.ts` gates on `PERMISSIONS.LEADS_EXPORT`, then applies per-role policy from the `Role` model (`maxExportLimitDaily`, `maskPiiData` — `prisma/schema.prisma:108-109`): `maskValue()` (route L15) masks all but the last 4 chars of email/phone/GST for non-admin roles whose `maskPiiData` is set, and a daily quota caps rows. Admins bypass masking and quota.
 
 ## Phase 1 — Critical bugs (data integrity & core workflows)
 
@@ -90,8 +91,8 @@ Fix before building new features on top of these flows.
 1. [NOT STARTED] Fix the analytics bug once repro steps are confirmed (see Phase 1 note).
 2. [NOT STARTED] Add quarterly filter to analytics.
 3. [NOT STARTED] Default analytics page view to "Today".
-4. [NOT STARTED] Build a separate analytics dashboard for Sales members (role-scoped).
-5. [PARTIAL] Analytics dashboard covering all lead stages, filterable/explorable. Only a plain dashboard with fixed KPI counts exists (`app/(app)/dashboard/page.tsx`, `app/api/v1/leads/stats/route.ts`) — no charts or stage-level exploration.
+4. [DONE] Build a separate analytics dashboard for Sales members (role-scoped). Per-role dashboards now exist: `app/(app)/dashboards/{sales,marketing,purchase,sales-purchase,admin}/page.tsx`, each scoped to its role.
+5. [PARTIAL] Analytics dashboard covering all lead stages, filterable/explorable. `app/(app)/analytics/page.tsx` now renders a full stage-distribution breakdown (all stages via `STAGE_ORDER`), per-salesperson stats, and activity volume. Still no interactive filter/drill-down — the "filterable/explorable" half remains open.
 6. [NOT STARTED] KPI cards on the all-leads page should reflect whatever lead-stage filter is currently active.
 7. [NOT STARTED] Total number of calls as a KPI.
 8. [NOT STARTED] Total number of leads that reached Qualified as a KPI.
@@ -99,7 +100,7 @@ Fix before building new features on top of these flows.
 10. [NOT STARTED] "Contacted within 1 hour" KPI should exclude overnight hours — leads arriving after hours shouldn't count against reps until calling starts at 10am.
 11. [NOT STARTED] SLA lapses by salesperson, shown in a Google-Sheet-style KPI table in Analytics.
 12. [NOT STARTED] Daily report, including the same KPI set shown in the overview.
-13. [NOT STARTED] Separate performance tabs for Sales, Marketing, and Purchase (currently shared/undifferentiated).
+13. [DONE] Separate performance tabs for Sales, Marketing, and Purchase. Delivered as per-role dashboards: `app/(app)/dashboards/{sales,marketing,purchase}/page.tsx` (plus `sales-purchase`, `admin`) — each role gets its own view rather than a shared one.
 14. [NOT STARTED] Fix visibility bug on the performance tab for the Purchase role (reported against Saqlain's account — should be role-scoped so it works for anyone in Purchase).
 15. [NOT STARTED] Add "average time between Qualified and Quote Sent" metric, scoped to the Purchase role (reported by Saqlain, but this is a role-level SLA metric — should surface for any Purchase user, not hardcoded to one account).
 16. [NOT STARTED] Marketing-role KPIs: count of contacted, count of qualified, count marked as lead (reported by Anirudh — applies to anyone assigned the Marketing role).
@@ -110,15 +111,15 @@ Fix before building new features on top of these flows.
 
 ## Phase 6 — Communications & External Integrations
 
-1. [NOT STARTED] JustDial integration.
-2. [NOT STARTED] TradeIndia integration and testing.
+1. [DONE] JustDial integration. Polling ingestion built: `app/api/v1/cron/justdial-poll/route.ts` (CRON_SECRET-gated) calls `lib/integrations/justdial.ts:pollAllOrgs()`, which pulls each org's leads from the JustDial Lead Manager API using `Settings.justdialApiKey` and creates Contact + Lead. Uses a 20-minute lookback window; duplicate overlap is harmless because dedup keys off `Lead.externalId`.
+2. [DONE] TradeIndia integration and testing. Inbound webhook at `app/api/v1/webhooks/tradeindia/[secret]/route.ts` — secret-in-path auth, rate-limited, creates Contact + Lead. Live end-to-end testing against a real TradeIndia account still worth doing.
 3. [PARTIAL] IndiaMart: test integration, then pull 1-year historical data export. A real inbound webhook with dedup exists (`app/api/v1/webhooks/indiamart/[secret]/route.ts`); no historical data pull built.
-4. [NOT STARTED] Connect company email (not personal) for lead email threads.
-5. [NOT STARTED] WhatsApp chatbot on the company's own business number. No WhatsApp code found anywhere in the repo.
+4. [PARTIAL] Connect company email (not personal) for lead email threads. Inbound half exists: `app/api/v1/webhooks/email/[secret]/route.ts` parses SendGrid inbound-parse payloads (`SendGridInboundSchema`) and creates a Contact + Lead from the sender. Outbound sending exists only for SLA notifications (`lib/sla-email.ts`, via `resend`). No threaded email conversation on the lead record yet.
+5. [PARTIAL] WhatsApp chatbot on the company's own business number. Inbound ingestion is built — `app/api/v1/webhooks/whatsapp/route.ts` handles Meta Cloud API webhook verification (GET) and inbound message events (POST), creating a Contact + Lead per sender and ignoring delivery/read status callbacks. There is no outbound send path and no conversational bot logic, which is what "chatbot" requires.
 6. [NOT STARTED] Separate WhatsApp number per salesperson.
 7. [NOT STARTED] Enable WhatsApp Business app access for the Marketing role (requested for Anirudh's account — this is a one-time account/device setup task, not app logic, so it doesn't need role-based code, just needs to be done for whoever currently holds the Marketing role).
 8. [PARTIAL] Quotation module for the Purchase team. Generic `Quote`/`PurchaseRequest` models exist but aren't Purchase-role-specific.
-9. [NOT STARTED] WhatsApp communications tracking/log (WA comms).
+9. [NOT STARTED] WhatsApp communications tracking/log (WA comms). Inbound messages currently create a lead but aren't retained as a per-lead message log — no WhatsApp conversation history is stored or rendered.
 
 ## Phase 7 — UI, Navigation & Performance Polish
 
@@ -139,6 +140,17 @@ Fix before building new features on top of these flows.
 15. [NOT STARTED] Add "Stages" button and "Log message" button — need clarification on current vs. expected behavior (flagged below).
 16. [NOT STARTED] Fix pagination ("rows and pages") issue — need clarification on the specific bug (flagged below).
 17. [NOT STARTED] Add a modal to capture data on "good calls" (qualitative call outcome tracking).
+
+## Phase 8 — Trading ERP & Accounting (planned, not started)
+
+Absorbed from the retired `IMPLEMENTATION_CHECKLIST.md`. Full spec lives in `IMPLEMENTATION_PLAN.md` Phase 2 (Trading ERP) and Phase 3 (Accounts/AI/Analytics) — this section is the live status stub only. ERP source (`src/`) is currently excluded from the build.
+
+1. [NOT STARTED] Sales orders & purchase orders.
+2. [NOT STARTED] Invoicing & payment tracking.
+3. [NOT STARTED] Inventory / goods receipt (stock IN) and Tally push.
+4. [NOT STARTED] ERP reports.
+5. [NOT STARTED] Accounting module.
+6. [NOT STARTED] AI engines (lead scoring, health, recommendations) and workflow automation.
 
 ---
 

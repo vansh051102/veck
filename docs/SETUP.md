@@ -65,7 +65,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Database
+# Database (for Supabase, use the connection pooler URL on port 5432)
 DATABASE_URL=postgresql://user:password@localhost:5432/veck
 
 # API
@@ -91,6 +91,8 @@ This will:
 - Create all database tables
 - Create Prisma client
 - Seed initial data (optional)
+
+For the native Prisma Migrate workflow (baselining, `migrate deploy`, Supabase pooler caveats, going-forward rules), see [`database-migrations.md`](database-migrations.md).
 
 ### 6. Run Development Server
 
@@ -170,28 +172,17 @@ npm run format           # Format code with Prettier
 
 ## API Endpoints
 
-### Authentication
+Useful while verifying a fresh setup:
 
 ```
 POST   /api/v1/auth/signup        - Create new account
 POST   /api/v1/auth/signin        - Login
 GET    /api/v1/auth/me            - Get current user
-```
-
-### Health Check
-
-```
 GET    /api/v1/health             - Server health status
-```
-
-### Phase 1 (Coming Soon)
-
-```
 GET    /api/v1/leads              - List leads
-POST   /api/v1/leads              - Create lead
-GET    /api/v1/leads/:id          - Get lead
-PUT    /api/v1/leads/:id          - Update lead
 ```
+
+Full endpoint reference: [API.md](API.md).
 
 ## Troubleshooting
 
@@ -276,22 +267,24 @@ curl -X GET http://localhost:3000/api/v1/auth/me \
 
 See [Next.js Deployment Docs](https://nextjs.org/docs/app/building-your-application/deploying)
 
+## Verify Your Setup
+
+1. `npm run dev` starts without errors on port 3000.
+2. `GET /api/v1/health` returns `{ "success": true }`.
+3. Sign up, then log in — you should land on your role's dashboard.
+4. Create a lead and move it to **Contacted** — the stage's SOP checklist should appear.
+5. Run the test suites: `npx jest` (unit) and `npm run e2e` (Playwright).
+
 ## Next Steps
 
-1. **Phase 0 Completion**
-   - [ ] All API routes functional
-   - [ ] Authentication flow tested
-   - [ ] Database schema validated
-
-2. **Phase 1: CRM & Sales**
-   - Build leads management API
-   - Create CRM frontend components
-   - Implement workflow engine
-   - Add SLA tracking
+- **What exists today:** [FEATURES.md](../FEATURES.md)
+- **What's being worked on:** [VECK_Feature_Backlog_Progress_List.md](../VECK_Feature_Backlog_Progress_List.md)
+- **How it's built:** [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Before touching the database:** [database-migrations.md](database-migrations.md)
+- **Engineering guidelines for AI-assisted changes:** [CLAUDE.md](../CLAUDE.md)
 
 ## Getting Help
 
-- Check [docs](./docs) folder
+- Check the [docs](.) folder
 - Read [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)
 - Open [GitHub Issues](https://github.com/vansh051102/veck/issues)
-- Contact: open a GitHub issue on the repository
