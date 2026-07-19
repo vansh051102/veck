@@ -28,7 +28,7 @@ const cellClass =
   'h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-primary'
 
 // Admin-only workspace auto-assignment rules editor: Source · Day · Product
-// Category · Assign to · Active. Mirrors the a competitor "Assignment Rules" dialog.
+// Category · Assign to · Active. Mirrors a reference competitor's Assignment Rules dialog.
 export function AssignmentRulesModal({ onClose }: { onClose: () => void }) {
   const { toast } = useToast()
   const [rules, setRules] = useState<Rule[]>([])

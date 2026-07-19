@@ -19,7 +19,7 @@ const inputClass =
 
 // Modal that captures the macro reason (controlled list) + micro details
 // (free text) when moving a lead to Deal Lost or Disqualified. Mirrors the
-// a competitor "Stage: Deal Lost / Disqualified" dialogs.
+// a reference competitor's Stage: Deal Lost / Disqualified dialogs.
 export function LeadStageReasonModal({ leadId, targetStage, onClose, onDone }: Props) {
   const [reason, setReason] = useState('')
   const [details, setDetails] = useState('')
