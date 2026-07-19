@@ -111,15 +111,15 @@ Fix before building new features on top of these flows.
 
 ## Phase 6 — Communications & External Integrations
 
-1. [NOT STARTED] JustDial integration.
-2. [NOT STARTED] TradeIndia integration and testing.
+1. [DONE] JustDial integration. Polling ingestion built: `app/api/v1/cron/justdial-poll/route.ts` (CRON_SECRET-gated) calls `lib/integrations/justdial.ts:pollAllOrgs()`, which pulls each org's leads from the JustDial Lead Manager API using `Settings.justdialApiKey` and creates Contact + Lead. Uses a 20-minute lookback window; duplicate overlap is harmless because dedup keys off `Lead.externalId`.
+2. [DONE] TradeIndia integration and testing. Inbound webhook at `app/api/v1/webhooks/tradeindia/[secret]/route.ts` — secret-in-path auth, rate-limited, creates Contact + Lead. Live end-to-end testing against a real TradeIndia account still worth doing.
 3. [PARTIAL] IndiaMart: test integration, then pull 1-year historical data export. A real inbound webhook with dedup exists (`app/api/v1/webhooks/indiamart/[secret]/route.ts`); no historical data pull built.
-4. [NOT STARTED] Connect company email (not personal) for lead email threads.
-5. [NOT STARTED] WhatsApp chatbot on the company's own business number. No WhatsApp code found anywhere in the repo.
+4. [PARTIAL] Connect company email (not personal) for lead email threads. Inbound half exists: `app/api/v1/webhooks/email/[secret]/route.ts` parses SendGrid inbound-parse payloads (`SendGridInboundSchema`) and creates a Contact + Lead from the sender. Outbound sending exists only for SLA notifications (`lib/sla-email.ts`, via `resend`). No threaded email conversation on the lead record yet.
+5. [PARTIAL] WhatsApp chatbot on the company's own business number. Inbound ingestion is built — `app/api/v1/webhooks/whatsapp/route.ts` handles Meta Cloud API webhook verification (GET) and inbound message events (POST), creating a Contact + Lead per sender and ignoring delivery/read status callbacks. There is no outbound send path and no conversational bot logic, which is what "chatbot" requires.
 6. [NOT STARTED] Separate WhatsApp number per salesperson.
 7. [NOT STARTED] Enable WhatsApp Business app access for the Marketing role (requested for Anirudh's account — this is a one-time account/device setup task, not app logic, so it doesn't need role-based code, just needs to be done for whoever currently holds the Marketing role).
 8. [PARTIAL] Quotation module for the Purchase team. Generic `Quote`/`PurchaseRequest` models exist but aren't Purchase-role-specific.
-9. [NOT STARTED] WhatsApp communications tracking/log (WA comms).
+9. [NOT STARTED] WhatsApp communications tracking/log (WA comms). Inbound messages currently create a lead but aren't retained as a per-lead message log — no WhatsApp conversation history is stored or rendered.
 
 ## Phase 7 — UI, Navigation & Performance Polish
 

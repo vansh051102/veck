@@ -61,6 +61,27 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. Dependency Tracking
+
+**AI tools routinely miss the cascading web of dependencies around a change. Trace it before editing, not after.**
+
+Before any non-trivial modification, state three things:
+
+- **Current State** — the exact logic/shape today.
+- **Future State** — what it becomes.
+- **Output Shift** — what downstream consumers see differently: response shape, DB writes, permission results, rendered UI.
+
+Then find who depends on it. Grep every caller of the function/route/field you're touching before you edit it — a change with no listed callers usually means you haven't looked yet.
+
+Applies especially to:
+- **API response shapes** — every route returns the `lib/api-response.ts` envelope; changing `data` breaks callers in `lib/api-client.ts` and the components below them.
+- **`prisma/schema.prisma`** — a field change ripples into routes, Zod schemas in `lib/validation.ts`, CSV import/export columns, and requires a migration (see `docs/database-migrations.md`).
+- **`lib/permissions.ts`** — adding or renaming a permission string affects `ROLE_PERMISSIONS`, every `requirePermission()` call site, and `PermissionGate` in the UI.
+- **`lib/lead-creation.ts`** — the shared path for all ingestion channels; a change here hits all five (IndiaMart, TradeIndia, Email, WhatsApp, JustDial) at once.
+- **`lib/lead-stages.ts`** — stage names are referenced by SOP checklists, SLA rules, dashboards, and analytics.
+
+Fix at the shared choke point, not per-caller. One guard in the common function beats a guard in each of five callers — and patching only the path in the ticket leaves the siblings broken.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
