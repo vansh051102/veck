@@ -6,12 +6,14 @@ For current progress and task status, see **[VECK_Feature_Backlog_Progress_List.
 
 ## Phase Summary
 
+Phases mirror **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**. Live feature/bug status is tracked in the backlog, not here.
+
 | Phase | Focus | Status |
 |-------|-------|--------|
-| Phase 0 | Foundation — auth, API, DB schema | ✅ Complete |
-| Phase 1 | CRM — leads, pipeline, SOP enforcement | 🔄 In Progress |
-| Phase 2 | Analytics, reporting, advanced workflow | ⏳ Planned |
-| Phase 3 | Integrations, automation, scale | ⏳ Planned |
+| Phase 0 | Foundation — auth, RBAC, API, DB schema | ✅ Complete |
+| Phase 1 | CRM & Sales — leads, pipeline, SOP, SLA, analytics | ✅ Complete |
+| Phase 2 | Trading ERP — orders, invoicing, inventory | ⏳ Planned |
+| Phase 3 | Accounts, AI, Automation & Analytics | ⏳ Planned |
 
 ## Quick Links
 
@@ -19,6 +21,6 @@ For current progress and task status, see **[VECK_Feature_Backlog_Progress_List.
 - [API reference](docs/API.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Database schema](docs/DATABASE.md)
-- [RBAC / permissions](docs/RBAC-IMPLEMENTATION-PLAN.md)
+- [RBAC / permissions](docs/archive/RBAC-IMPLEMENTATION-PLAN.md) (shipped — archived)
 - [SOP guide for sales team](docs/SOP_GUIDE.md)
 - [Deployment](docs/DEPLOYMENT.md)

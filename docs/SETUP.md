@@ -65,7 +65,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Database
+# Database (for Supabase, use the connection pooler URL on port 5432)
 DATABASE_URL=postgresql://user:password@localhost:5432/veck
 
 # API
@@ -91,6 +91,8 @@ This will:
 - Create all database tables
 - Create Prisma client
 - Seed initial data (optional)
+
+For the native Prisma Migrate workflow (baselining, `migrate deploy`, Supabase pooler caveats, going-forward rules), see [`database-migrations.md`](database-migrations.md).
 
 ### 6. Run Development Server
 
