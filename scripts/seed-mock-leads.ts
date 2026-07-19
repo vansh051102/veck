@@ -59,7 +59,7 @@ const SEEDS: SeedLead[] = [
     daysAgo: 1,
   },
   {
-    company: 'Veck Borewell Works',
+    company: 'Ashoka Borewell Works',
     firstName: 'Suresh',
     lastName: 'Gowda',
     email: 'suresh@mbw.demo',

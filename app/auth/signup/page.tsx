@@ -117,7 +117,7 @@ export default function SignupPage() {
             id="orgName"
             required
             autoComplete="organization"
-            placeholder="Veck Pvt. Ltd."
+            placeholder="Acme Steel Pvt. Ltd."
             value={orgName}
             onChange={(e) => setOrgName(e.target.value)}
             className={authInputClass}

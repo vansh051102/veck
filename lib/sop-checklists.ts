@@ -83,7 +83,7 @@ export const SALES_SOP_CHECKLISTS: Record<string, SopChecklistTemplate[]> = {
       items: [
         'Serviceable Location',
         'Viable Quantity',
-        'Product Supplied by VECK',
+        'Product Supplied',
         'Genuine Requirement',
         'Commercially Viable Opportunity',
       ],

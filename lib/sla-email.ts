@@ -199,7 +199,7 @@ export async function sendSLABreachEmail(payload: BreachEmailPayload): Promise<{
 
     // Send email via Resend
     const result = await resend.emails.send({
-      from: 'noreply@veck-crm.com',
+      from: 'info@veck.in',
       to: payload.managerEmail,
       subject: `⚠️ SLA Breach: ${payload.leadName}`,
       html: generateBreachEmailHTML(payload),
@@ -277,7 +277,7 @@ export async function sendSLAWarningEmail(payload: WarningEmailPayload): Promise
 
     // Send email
     const result = await resend.emails.send({
-      from: 'noreply@veck-crm.com',
+      from: 'info@veck.in',
       to: user.email,
       subject: `⏰ SLA Warning: ${payload.leadName}`,
       html: generateWarningEmailHTML(payload),
