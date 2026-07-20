@@ -1,7 +1,6 @@
 import { ValidationError, ConflictError } from './api-response'
 import {
   ALL_STAGES,
-  ALLOWED_TRANSITIONS,
   TERMINAL_STAGES,
   isTerminalStage,
   isValidReason,
@@ -50,14 +49,9 @@ export function isValidTransition(fromStage: string, toStage: string): boolean {
   return from !== to
 }
 
-// Sequence gate: is `toStage` one of the stages ALLOWED_TRANSITIONS says
-// `fromStage` may move to next? Admins bypass this (see assertTransitionAllowed)
-// to fix mis-entered data; everyone else follows the SOP.
-function isSequenceAllowed(fromStage: string, toStage: string): boolean {
-  const from = normalizeStageName(fromStage)
-  const to = normalizeStageName(toStage)
-  return (ALLOWED_TRANSITIONS[from] ?? []).includes(to)
-}
+// Sequence is guidance, not a gate. Out-of-sequence moves are permitted for
+// every role and recorded instead — see isOutOfSequence in lib/lead-stages.ts
+// and the STAGE_CHANGE audit entry written by the stage route.
 
 /**
  * Role-aware transition check.
@@ -129,14 +123,8 @@ export function assertTransitionAllowed(
     assertRoleCanTransition(role, fromStage, to)
   }
 
-  if (role !== 'admin' && !isSequenceAllowed(fromStage, to)) {
-    const allowed = ALLOWED_TRANSITIONS[fromStage] ?? []
-    throw new ValidationError(
-      allowed.length > 0
-        ? `Cannot move from "${fromStage}" to "${to}" — next stage must be one of: ${allowed.join(', ')}`
-        : `"${fromStage}" is a terminal stage and cannot move to "${to}"`
-    )
-  }
+  // Out-of-sequence moves are deliberately allowed for every role; the stage
+  // route records them with a reason for admin review rather than blocking.
 
   const isLossPath = to === 'Deal Lost' || to === 'Disqualified'
 

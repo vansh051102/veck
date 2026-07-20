@@ -62,7 +62,7 @@ Fix before building new features on top of these flows.
 
 ## Phase 3 — Pipeline: Stages, Priority, SLA
 
-1. [DONE] Confirm stage-jump / skip-stage capability — already implemented, verify no regressions.
+1. [DONE] Confirm stage-jump / skip-stage capability. A sequence gate added in `144e716` had silently blocked non-admins from skipping; that block is removed. **Every role may now move a lead to any stage they can see.** Out-of-sequence moves aren't blocked, they're recorded: `lib/lead-stages.ts:isOutOfSequence()` detects them, the stage route requires a reason, and both the timeline event (prefixed "⚠ Skipped sequence") and the `STAGE_CHANGE` audit entry carry `outOfSequence` / `flaggedDisqualify` flags for admin review. Covers the reported edge cases — Order Closed → Deal Lost, New Lead → Deal Lost, Contacted → Deal Lost — while Qualified/Quote Sent → Disqualified stays on the narrower `isFlaggedDisqualify` path.
 2. [NOT STARTED] Priority field should only appear starting at "New Lead" and "Qualified for Purchase" stages, not earlier.
 3. [NOT STARTED] Split priority into two distinct fields: pre-quote priority (Low / Mid / High) and post-quote follow-up priority (1–5, descending urgency).
 4. [NOT STARTED] Quotation number should not be mandatory when marking a lead as Quote Sent.
@@ -73,7 +73,7 @@ Fix before building new features on top of these flows.
 9. [NOT STARTED] SLA for the Purchase team during quote creation.
 10. [NOT STARTED] Call-count guardrails per stage (e.g. 3 calls before a stage nudge, 6 calls after Quote Sent) — require a reason once the threshold is crossed.
 11. [NOT STARTED] Add a dropdown for call-log reason/type (replacing free text).
-12. [NOT STARTED] Downgrade option (move a lead backward a stage) — must be visible in the timeline; needs to work for Admin and for the salesperson's own view.
+12. [DONE] Downgrade option (move a lead backward a stage) — works for Admin and for the salesperson's own view. Backward moves fall out of the same change as item 1: any role can select any visible stage, and because a backward move is out-of-sequence it requires a reason and is surfaced in the timeline with the "⚠ Skipped sequence" prefix.
 13. [DONE] Dropdown for Deal Lost reason (replacing free text). Confirmed via `DEAL_LOST_REASONS` in `lib/lead-stages.ts`, enforced in `lib/workflow.ts`.
 14. [NOT STARTED] Deal Lost modal: "Other" reason must require accompanying text (mandatory, not optional).
 15. [DONE] Consolidate deal-lost reasons into one shared, maintained list. Same source as item 13 above.

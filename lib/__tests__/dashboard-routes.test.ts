@@ -1,8 +1,12 @@
 import { dashboardRouteForRole } from '../dashboard-routes'
 
 describe('dashboardRouteForRole', () => {
-  it('maps admin to /dashboards/admin', () => {
-    expect(dashboardRouteForRole('admin')).toBe('/dashboards/admin')
+  it('maps admin to the admin portal', () => {
+    expect(dashboardRouteForRole('admin')).toBe('/admin')
+  })
+
+  it('falls back to /dashboards/admin for an unknown role', () => {
+    expect(dashboardRouteForRole('not_a_role')).toBe('/dashboards/admin')
   })
 
   it('maps marketing_manager to /dashboards/marketing', () => {

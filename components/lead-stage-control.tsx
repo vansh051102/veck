@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
-import { otherStages, reasonsForStage, visibleStagesForRole, nextValidStages, isFlaggedDisqualify } from '@/lib/lead-stages'
+import { otherStages, reasonsForStage, visibleStagesForRole, isFlaggedDisqualify, isOutOfSequence } from '@/lib/lead-stages'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { PermissionGate } from '@/components/permission-gate'
@@ -40,11 +40,14 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
   const [quotationValue, setQuotationValue] = useState('')
   const [quoteError, setQuoteError] = useState<string | null>(null)
 
+  // Every role may move a lead to any stage they can see — real deals go
+  // sideways. Out-of-sequence jumps aren't hidden, they require a reason below
+  // and are flagged on the timeline for admin review.
   const visible = me ? visibleStagesForRole(me.role) : otherStages(currentStage)
-  const sequenceAllowed = me?.role === 'admin' ? otherStages(currentStage) : nextValidStages(currentStage)
-  const nextOptions = sequenceAllowed.filter((s) => visible.includes(s))
+  const nextOptions = otherStages(currentStage).filter((s) => visible.includes(s))
   const isLossPath = targetStage === 'Deal Lost' || targetStage === 'Disqualified'
   const isFlagged = isFlaggedDisqualify(currentStage, targetStage)
+  const skipsSequence = Boolean(targetStage) && isOutOfSequence(currentStage, targetStage)
   const isHandover = targetStage === 'Qualified'
   const isQuoteSent = targetStage === 'Quote Sent'
   const isMarketing = me?.role.startsWith('marketing') ?? false
@@ -163,6 +166,17 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
             </select>
           )}
 
+          {skipsSequence && !isLossPath && (
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              aria-label="Reason for skipping the usual sequence (required)"
+              placeholder="Why skip the usual sequence? (required)"
+              className="h-9 min-w-[260px] rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+            />
+          )}
+
           {isHandover && (
             <select
               value={assignedToId}
@@ -187,6 +201,7 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
               !targetStage ||
               loading ||
               (isLossPath && !reason) ||
+              (skipsSequence && !reason.trim()) ||
               (handoverRequired && !assignedToId)
             }
             onClick={handleConfirm}
@@ -197,6 +212,12 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
         {isHandover && salesUsers.length === 0 && (
           <p className="text-xs text-muted-foreground">
             No sales users found — the lead keeps its current assignee.
+          </p>
+        )}
+        {skipsSequence && !isFlagged && (
+          <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+            Moving from "{currentStage}" to "{targetStage}" skips the usual sequence. That&apos;s
+            allowed, but the reason is recorded and flagged on the timeline for admin review.
           </p>
         )}
         {isFlagged && (

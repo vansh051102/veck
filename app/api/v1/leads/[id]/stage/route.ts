@@ -8,7 +8,13 @@ import {
 } from '@/lib/sop-checklists'
 import { createFollowUpSchedule } from '@/lib/follow-up'
 import { UpdateLeadStageSchema } from '@/lib/validation'
-import { isWonStage, normalizeStageName, SALES_HANDOVER_ROLES } from '@/lib/lead-stages'
+import {
+  isWonStage,
+  normalizeStageName,
+  isOutOfSequence,
+  isFlaggedDisqualify,
+  SALES_HANDOVER_ROLES,
+} from '@/lib/lead-stages'
 import {
   successResponse,
   withErrorHandler,
@@ -57,6 +63,17 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const fromStage = normalizeStageName(lead.stage)
 
   assertTransitionAllowed(lead, toStage, reason, ctx.role)
+
+  // Skipping the SOP sequence is allowed for every role, but never silently:
+  // require a reason and flag it on the timeline + audit entry so an admin can
+  // review why (e.g. Quote Sent → Disqualified, or a closed order reopened).
+  const outOfSequence = isOutOfSequence(fromStage, toStage)
+  const flaggedDisqualify = isFlaggedDisqualify(fromStage, toStage)
+  if (outOfSequence && !reason) {
+    throw new ValidationError(
+      `Moving a lead from "${fromStage}" straight to "${toStage}" skips the usual sequence — a reason is required.`
+    )
+  }
 
   // Marketing → Sales handover required when entering Qualified
   const isMarketing = ctx.role.startsWith('marketing')
@@ -169,13 +186,16 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
       ? `Lead moved to ${toStage}. [Reason: ${reason}${reasonDetails ? ` | Details: ${reasonDetails}` : ''}]`
       : reason
 
+    const baseTitle = assignee
+      ? `Stage changed: ${fromStage} → ${toStage} · handed over to ${assignee.fullName}`
+      : `Stage changed: ${fromStage} → ${toStage}`
+
     await tx.timelineEvent.create({
       data: {
         timelineId: timeline.id,
         type: 'stage_changed',
-        title: assignee
-          ? `Stage changed: ${fromStage} → ${toStage} · handed over to ${assignee.fullName}`
-          : `Stage changed: ${fromStage} → ${toStage}`,
+        // Prefix so an out-of-sequence jump is obvious when scanning the timeline.
+        title: outOfSequence ? `⚠ Skipped sequence — ${baseTitle}` : baseTitle,
         description: lossDescription,
         metadata: {
           oldStage: fromStage,
@@ -183,6 +203,8 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
           reason,
           reasonDetails,
           assignedToId: assignee?.id,
+          outOfSequence,
+          flaggedDisqualify,
         },
         createdBy: ctx.userId,
       },
@@ -196,6 +218,8 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     toStage,
     reason,
     reasonDetails,
+    outOfSequence,
+    flaggedDisqualify,
   })
 
   return successResponse(updated)
