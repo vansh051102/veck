@@ -216,14 +216,15 @@ export function LeadStageControl({ leadId, currentStage, onChanged }: Props) {
         )}
         {skipsSequence && !isFlagged && (
           <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-            Moving from "{currentStage}" to "{targetStage}" skips the usual sequence. That&apos;s
-            allowed, but the reason is recorded and flagged on the timeline for admin review.
+            Moving from &quot;{currentStage}&quot; to &quot;{targetStage}&quot; skips the usual
+            sequence. That&apos;s allowed, but the reason is recorded and flagged on the timeline for
+            admin review.
           </p>
         )}
         {isFlagged && (
           <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-            Disqualifying from "{currentStage}" is flagged for the admin — real engagement already
-            happened on this lead. Double-check before confirming.
+            Disqualifying from &quot;{currentStage}&quot; is flagged for the admin — real engagement
+            already happened on this lead. Double-check before confirming.
           </p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
