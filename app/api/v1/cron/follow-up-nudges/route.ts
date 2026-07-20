@@ -35,16 +35,29 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     // Leads that left Quote Sent no longer need follow-ups; cancel them.
     if (task.lead.stage !== 'Quote Sent') {
-      await prisma.activity.update({ where: { id: task.id }, data: { status: 'cancelled' } })
-      cancelled++
+      const cancelledNow = await prisma.activity.updateMany({
+        where: { id: task.id, status: 'pending' },
+        data: { status: 'cancelled' },
+      })
+      cancelled += cancelledNow.count
       continue
     }
 
+    // Claim the task before writing the timeline entry. `overdue` was read once
+    // at the top, so two overlapping runs both see nudged as unset and would
+    // each append an "Overdue" event. This conditional update is atomic —
+    // only one runner matches, the other gets count 0 and skips.
+    const claimed = await prisma.activity.updateMany({
+      where: {
+        id: task.id,
+        status: 'pending',
+        NOT: { metadata: { path: ['nudged'], equals: true } },
+      },
+      data: { metadata: { ...meta, nudged: true } },
+    })
+    if (claimed.count === 0) continue
+
     await prisma.$transaction(async (tx) => {
-      await tx.activity.update({
-        where: { id: task.id },
-        data: { metadata: { ...meta, nudged: true } },
-      })
       const timeline = await tx.timeline.upsert({
         where: { leadId: task.lead.id },
         create: { leadId: task.lead.id, orgId: task.lead.orgId },

@@ -68,6 +68,17 @@ export const GET = withErrorHandler(async (req: Request) => {
     if (isBreached && !clock.notificationSentAt) {
       const breachedByMinutes = Math.max(0, timeElapsed - target)
 
+      // Claim the clock before sending. `pendingClocks` was read at the top of
+      // the run, so two overlapping invocations both see notificationSentAt as
+      // null and would both email. This conditional update is atomic in
+      // Postgres: exactly one runner matches and gets count 1, the loser gets 0
+      // and moves on. Cheaper than a global lock, and runs stay parallel.
+      const claimed = await prisma.slaClock.updateMany({
+        where: { id: clock.id, notificationSentAt: null, status: 'pending' },
+        data: { notificationSentAt: now, status: 'breached', escalatedAt: now },
+      })
+      if (claimed.count === 0) continue
+
       // Only send to escalee if configured, otherwise to assigned user
       const notifyUser = escaleeUser || assignedUser
       if (notifyUser?.email) {
@@ -89,30 +100,24 @@ export const GET = withErrorHandler(async (req: Request) => {
 
         if (emailResult.success) {
           emailsSent++
-          // Mark notification sent
-          await prisma.slaClock.update({
-            where: { id: clock.id },
-            data: { notificationSentAt: now, status: 'breached', escalatedAt: now },
-          })
         } else {
+          // The claim above already recorded the breach; a failed send is not
+          // retried on purpose, so a broken mailbox can't re-alert every run.
           console.warn(`[SLA] Email send failed for clock ${clock.id}: ${emailResult.reason}`)
-          // Still mark as breached even if email failed (don't retry infinitely)
-          await prisma.slaClock.update({
-            where: { id: clock.id },
-            data: { status: 'breached', escalatedAt: now },
-          })
         }
       } else {
-        // No email to send to, just mark as breached
-        await prisma.slaClock.update({
-          where: { id: clock.id },
-          data: { status: 'breached', escalatedAt: now },
-        })
         console.log(`[SLA] Breach marked but no email sent (no manager email): ${clock.id}`)
       }
     }
     // HANDLE WARNING (80%+ but not breached yet)
     else if (!isBreached && percentUsed >= 80 && !clock.warnedAt && assignedUser?.email) {
+      // Same claim-before-send guard as the breach path above.
+      const claimedWarning = await prisma.slaClock.updateMany({
+        where: { id: clock.id, warnedAt: null },
+        data: { warnedAt: now },
+      })
+      if (claimedWarning.count === 0) continue
+
       const emailResult = await sendSLAWarningEmail({
         orgId: clock.orgId,
         slaClockId: clock.id,
@@ -132,11 +137,13 @@ export const GET = withErrorHandler(async (req: Request) => {
 
       if (emailResult.success) {
         warningsSent++
-        await prisma.slaClock.update({
-          where: { id: clock.id },
-          data: { warnedAt: now },
-        })
       } else {
+        // Unlike a breach, a warning stays worth retrying — release the claim so
+        // the next run can try again after a transient mail failure.
+        await prisma.slaClock.updateMany({
+          where: { id: clock.id },
+          data: { warnedAt: null },
+        })
         console.warn(`[SLA] Warning email send failed for clock ${clock.id}: ${emailResult.reason}`)
       }
     }
