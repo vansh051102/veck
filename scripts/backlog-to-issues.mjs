@@ -32,7 +32,7 @@ const lines = readFileSync(SRC, 'utf8').split('\n')
 const rows = []
 let phase = null
 
-for (const line of lines) {
+for (const [lineIndex, line] of lines.entries()) {
   const head = line.match(/^## Phase (\d) — (.+)$/)
   if (head) {
     phase = { num: Number(head[1]), title: `Phase ${head[1]} — ${head[2]}` }
@@ -56,6 +56,10 @@ for (const line of lines) {
     milestone: phase.title,
     labels,
     state: status === 'DONE' ? 'closed' : 'open',
+    // Only real backlog lines get a lineIndex — --map uses it to write the
+    // issue number back onto the exact source line. The synthetic [Clarify]
+    // row pushed below has no source line and is skipped by --map.
+    lineIndex,
   })
 }
 
@@ -90,7 +94,45 @@ const counts = rows.reduce((a, r) => {
   return a
 }, {})
 
-if (dryRun) {
+if (mapMode) {
+  // Reuses the exact same `rows` built above — the title this script would
+  // generate for an item is the same title post-backlog-issues.sh used to
+  // create the GitHub issue, so matching on title needs no separate ID store.
+  const issueList = JSON.parse(
+    execFileSync(
+      'gh',
+      ['issue', 'list', '--state', 'all', '--limit', '500', '--json', 'number,title'],
+      { encoding: 'utf8' }
+    )
+  )
+  const numberByTitle = new Map(issueList.map((i) => [i.title, i.number]))
+
+  const ISSUE_SUFFIX_RE = /\s\(#\d+\)\s*$/
+  let mapped = 0
+  let alreadyMapped = 0
+  let notFound = 0
+
+  for (const r of rows) {
+    if (r.lineIndex === undefined) continue // the synthetic [Clarify] row
+    const line = lines[r.lineIndex]
+    if (ISSUE_SUFFIX_RE.test(line)) {
+      alreadyMapped++
+      continue
+    }
+    const issueNumber = numberByTitle.get(r.title)
+    if (issueNumber === undefined) {
+      notFound++
+      continue
+    }
+    lines[r.lineIndex] = `${line} (#${issueNumber})`
+    mapped++
+  }
+
+  if (mapped > 0) {
+    writeFileSync(SRC, lines.join('\n'))
+  }
+  console.error(`mapped ${mapped}, already-mapped ${alreadyMapped}, no matching issue ${notFound}`)
+} else if (dryRun) {
   for (const r of rows) {
     console.log([r.title, r.milestone ?? '(none)', r.labels.join(','), r.state].join(' | '))
   }
