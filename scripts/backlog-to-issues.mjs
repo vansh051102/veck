@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-// Parse VECK_Feature_Backlog_Progress_List.md into GitHub issue rows (JSONL).
-// Usage: node scripts/backlog-to-issues.mjs [--dry-run] [--out FILE]
+// Parse VECK_Feature_Backlog_Progress_List.md into GitHub issue rows (JSONL),
+// or map already-created issue numbers back into the backlog file.
+// Usage: node scripts/backlog-to-issues.mjs [--dry-run | --map] [--out FILE]
 
 import { readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 
 const SRC = 'VECK_Feature_Backlog_Progress_List.md'
 const EXPECTED_ITEMS = 109
 
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
+const mapMode = args.includes('--map')
 const outIdx = args.indexOf('--out')
 const outFile = outIdx === -1 ? null : args[outIdx + 1]
 
