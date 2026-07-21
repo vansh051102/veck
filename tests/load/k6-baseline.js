@@ -40,6 +40,34 @@
  * pool_timeout=20 on DATABASE_URL. Deliberately not changed here — it belongs
  * in the deployment's connection string, not in a test file.
  * ---------------------------------------------------------------------------
+ *
+ * ---------------------------------------------------------------------------
+ * Second baseline, 2026-07-22, same dev server and pooler, connection_limit
+ * DELIBERATELY LEFT AT 5 — this run isolates the code fix from the config fix.
+ *
+ * /leads/stats' Promise.all became prisma.$transaction (one reserved
+ * connection instead of seven — see the route for why groupBy runs separately)
+ * and middleware.ts no longer treats a session-resolution infra error as a
+ * logout. Manual repro of the exact same 8-concurrent request:
+ *
+ *   200 12.72s   200 13.07s   200 13.96s   200 14.02s
+ *   200 15.83s   200 16.48s   200 16.48s   200 17.93s
+ *
+ * Zero 503s (was six of eight). Full k6 run: http_req_failed 0.00% (0/75),
+ * all thresholds passed. Latency is WORSE than before (reads p95 ~18.8s vs
+ * ~22s baseline is actually similar, cron sweep ~15.8s) — expected, since the
+ * same 8 requests are now queuing over ~2 connections per request instead of
+ * failing outright over 7. connection_limit=5 was never raised for this run,
+ * on purpose, per the plan's non-goal of not touching live credentials.
+ *
+ * Conclusion: the code fix alone eliminates the 503s. It does not fix
+ * latency, and isn't meant to — that's cross-region network RTT (confirmed
+ * last baseline) plus deliberately-unraised connection_limit. Raising
+ * connection_limit as documented in .env.example / docs/DEPLOYMENT.md is
+ * still required for acceptable latency under concurrency; that change
+ * belongs in the deployment's connection string, applied by whoever holds
+ * that credential.
+ * ---------------------------------------------------------------------------
  */
 import http from 'k6/http'
 import { check, group, sleep } from 'k6'
