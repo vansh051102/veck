@@ -15,6 +15,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # Real Postgres for the cron concurrency test. The claim guards in
+    # api/v1/cron/* depend on UPDATE ... WHERE atomicity, which a mocked
+    # Prisma client cannot exercise.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: veck_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/veck_test
+
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +59,16 @@ jobs:
 
       - name: Unit tests
         run: npx jest --ci
+
+      # `npm run db:push` deliberately sources .env.local, so it cannot be used
+      # here — point Prisma at the service container directly instead.
+      - name: Prepare test database
+        run: npx prisma db push --skip-generate
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+
+      - name: Integration tests (real Postgres)
+        run: npm run test:integration -- --ci
 
       # DATABASE_URL is only needed so `next build` can collect page data; it is
       # never connected to. A syntactically valid dummy keeps the build honest
