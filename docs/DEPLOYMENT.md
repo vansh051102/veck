@@ -10,7 +10,7 @@ Set these in Vercel → Project → Settings → Environment Variables (and `.en
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Supabase Postgres connection string (use the **pooled** connection for serverless) |
+| `DATABASE_URL` | Supabase Postgres connection string (use the **pooled** connection for serverless). Append `?connection_limit=15&pool_timeout=20` — a default connection limit is too small once any route fans out multiple queries per request under concurrent traffic; see `tests/load/k6-baseline.js` for the load test that found this |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase admin key — never expose to the client |

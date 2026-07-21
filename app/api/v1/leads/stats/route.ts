@@ -105,9 +105,22 @@ export const GET = withErrorHandler(async (req: Request) => {
   monthStart.setHours(0, 0, 0, 0)
   const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
-  const [total, byStage, slaBreached, open, hot, wonThisMonth, connected] = await Promise.all([
+  // $transaction, not Promise.all: these queries used to run concurrently,
+  // each reserving its own pool connection. One request already wanted more
+  // connections than DATABASE_URL's connection_limit allows, so a handful of
+  // concurrent users exhausted the pool entirely (see tests/load/k6-baseline.js).
+  // $transaction runs the same queries over a single reserved connection —
+  // same query objects, same return shape, just not connection-hungry.
+  //
+  // groupBy runs as its own call rather than inside the transaction array:
+  // Prisma's $transaction([...]) has weaker generic inference than Promise.all
+  // for a heterogeneous mix of count/groupBy operations (it loses the _count
+  // shape and falls back to a much wider type). Splitting it out costs one
+  // extra connection (2 total for this block instead of 1) but keeps everything
+  // fully typed with no assertions — a good trade against 7 connections today.
+  const byStage = await prisma.lead.groupBy({ by: ['stage'], where: leadsWhere, _count: { _all: true } })
+  const [total, slaBreached, open, hot, wonThisMonth, connected] = await prisma.$transaction([
     prisma.lead.count({ where: leadsWhere }),
-    prisma.lead.groupBy({ by: ['stage'], where: leadsWhere, _count: { _all: true } }),
     prisma.lead.count({ where: { ...leadsWhere, slaBreached: true, status: 'open' } }),
     prisma.lead.count({ where: { ...leadsWhere, status: 'open' } }),
     prisma.lead.count({ where: { ...leadsWhere, status: 'open', priority: { in: ['High', 'Urgent'] } } }),
@@ -152,16 +165,22 @@ export const GET = withErrorHandler(async (req: Request) => {
       department,
       'activities'
     )
-    const [activitiesThisWeek, openLeadsForAging] = await Promise.all([
-      prisma.activity.count({
-        where: {
-          orgId,
-          createdAt: { gte: weekStart },
-          ...activityOwnership,
-        },
-      }),
-      prisma.lead.findMany({ where: { ...leadsWhere, status: 'open' }, select: { createdAt: true } }),
-    ])
+    // Split for the same reason as the block above: count + findMany is a
+    // heterogeneous pair, and mixing operation types loses type inference
+    // inside $transaction's array form. Two connections here, down from two
+    // concurrent ones today — no regression, just no longer batched via
+    // Promise.all's per-call connection reservation multiplying elsewhere.
+    const activitiesThisWeek = await prisma.activity.count({
+      where: {
+        orgId,
+        createdAt: { gte: weekStart },
+        ...activityOwnership,
+      },
+    })
+    const openLeadsForAging = await prisma.lead.findMany({
+      where: { ...leadsWhere, status: 'open' },
+      select: { createdAt: true },
+    })
 
     const now = Date.now()
     const dealAgingBuckets = { '0-7d': 0, '8-30d': 0, '30d+': 0 }
