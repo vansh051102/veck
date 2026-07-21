@@ -211,6 +211,13 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     })
 
     return result
+  }, {
+    // Three sequential round-trips (lead update, timeline upsert, event insert)
+    // against a pooled Postgres in another region can exceed Prisma's 5s
+    // default, failing the whole stage change with P2028. Observed at ~12s
+    // against the ap-southeast-2 pooler.
+    timeout: 20_000,
+    maxWait: 10_000,
   })
 
   await logAudit(ctx.orgId, ctx.userId, 'STAGE_CHANGE', 'Lead', updated.id, updated.companyName, {
