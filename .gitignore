@@ -55,3 +55,4 @@ Thumbs.db
 playwright-report/
 test-results/
 tsconfig.tsbuildinfo
+.env*
