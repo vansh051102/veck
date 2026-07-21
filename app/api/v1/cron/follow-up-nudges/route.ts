@@ -45,17 +45,23 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     // Claim the task before writing the timeline entry. `overdue` was read once
     // at the top, so two overlapping runs both see nudged as unset and would
-    // each append an "Overdue" event. This conditional update is atomic —
-    // only one runner matches, the other gets count 0 and skips.
-    const claimed = await prisma.activity.updateMany({
-      where: {
-        id: task.id,
-        status: 'pending',
-        NOT: { metadata: { path: ['nudged'], equals: true } },
-      },
-      data: { metadata: { ...meta, nudged: true } },
-    })
-    if (claimed.count === 0) continue
+    // each append an "Overdue" event. A single UPDATE ... WHERE is atomic, so
+    // exactly one runner matches and the rest fall through.
+    //
+    // Raw SQL rather than a Prisma JSON filter on purpose: the natural spelling
+    // (NOT: { metadata: { path: ['nudged'], equals: true } }) silently matches
+    // nothing when the key is absent, because metadata->'nudged' = true is NULL
+    // and NOT NULL is NULL, not true. Every fresh task lacks the key, so that
+    // form claimed no rows at all and would have disabled nudges entirely.
+    // COALESCE on the extracted text makes the absent case explicit.
+    const claimed = await prisma.$executeRaw`
+      UPDATE "Activity"
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"nudged":true}'::jsonb
+      WHERE id = ${task.id}
+        AND status = 'pending'
+        AND COALESCE(metadata->>'nudged', 'false') <> 'true'
+    `
+    if (claimed === 0) continue
 
     await prisma.$transaction(async (tx) => {
       const timeline = await tx.timeline.upsert({

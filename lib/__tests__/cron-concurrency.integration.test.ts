@@ -158,8 +158,12 @@ describeIfDb('cron claim guards are atomic under concurrency', () => {
   })
 
   it('lets exactly one racer claim a follow-up task via the metadata JSON path', async () => {
-    // Also proves the `NOT: { metadata: { path: [...] } }` filter used by
-    // follow-up-nudges is valid against a real server, not just the type checker.
+    // This is the case a mocked client could never have caught. The obvious
+    // Prisma spelling, NOT: { metadata: { path: ['nudged'], equals: true } },
+    // matches zero rows when the key is absent: metadata->'nudged' = true is
+    // NULL and NOT NULL is NULL rather than true. Every fresh task lacks the
+    // key, so follow-up-nudges claimed nothing and nudged nobody. The raw
+    // statement below is what the route runs now.
     const task = await prisma.activity.create({
       data: {
         orgId,
@@ -173,30 +177,48 @@ describeIfDb('cron claim guards are atomic under concurrency', () => {
       },
     })
 
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () =>
-        prisma.activity.updateMany({
-          where: {
-            id: task.id,
-            status: 'pending',
-            NOT: { metadata: { path: ['nudged'], equals: true } },
-          },
-          data: { metadata: { nudged: true } },
-        })
-      )
-    )
+    const claim = () => prisma.$executeRaw`
+      UPDATE "Activity"
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"nudged":true}'::jsonb
+      WHERE id = ${task.id}
+        AND status = 'pending'
+        AND COALESCE(metadata->>'nudged', 'false') <> 'true'
+    `
 
-    expect(results.filter((r) => r.count === 1)).toHaveLength(1)
+    const results = await Promise.all(Array.from({ length: 10 }, claim))
+    expect(results.filter((n) => n === 1)).toHaveLength(1)
+    expect(results.filter((n) => n === 0)).toHaveLength(9)
 
     // A subsequent run must find nothing left to claim.
-    const rerun = await prisma.activity.updateMany({
-      where: {
-        id: task.id,
+    expect(await claim()).toBe(0)
+
+    // The merge must preserve any other keys already on the record.
+    const after = await prisma.activity.findUniqueOrThrow({ where: { id: task.id } })
+    expect((after.metadata as Record<string, unknown>).nudged).toBe(true)
+  })
+
+  it('claims a follow-up task whose metadata column is NULL, not just empty', async () => {
+    // COALESCE(metadata, '{}') is what makes this case work; without it the
+    // concatenation yields NULL and the row is never claimed.
+    const task = await prisma.activity.create({
+      data: {
+        orgId,
+        leadId,
+        type: 'task',
         status: 'pending',
-        NOT: { metadata: { path: ['nudged'], equals: true } },
+        title: 'Daily follow-up (day 2 of 6)',
+        scheduledFor: new Date(Date.now() - 60_000),
+        createdBy: 'system',
       },
-      data: { metadata: { nudged: true } },
     })
-    expect(rerun.count).toBe(0)
+
+    const claimed = await prisma.$executeRaw`
+      UPDATE "Activity"
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"nudged":true}'::jsonb
+      WHERE id = ${task.id}
+        AND status = 'pending'
+        AND COALESCE(metadata->>'nudged', 'false') <> 'true'
+    `
+    expect(claimed).toBe(1)
   })
 })
