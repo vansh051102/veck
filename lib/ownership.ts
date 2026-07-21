@@ -1,13 +1,5 @@
 import { prisma } from './db'
-
-/** Stages purchase can see for quote handoff + post-order procurement. */
-const PURCHASE_VISIBLE_STAGES = [
-  'Qualified',
-  'Quote Sent',
-  'Order Confirmed',
-  'Order Closed',
-  'Closed Won', // legacy
-] as const
+import { PURCHASE_QUERY_STAGES } from './lead-stages'
 
 /**
  * Sales user IDs that report (directly or indirectly) to `managerId`,
@@ -131,14 +123,14 @@ export function buildOwnershipFilter(
       if (resource === 'leads') {
         return {
           assignedToId: userId,
-          stage: { in: [...PURCHASE_VISIBLE_STAGES] },
+          stage: { in: [...PURCHASE_QUERY_STAGES] },
         }
       }
       if (resource === 'quotes' || resource === 'purchase_requests') {
         return {
           lead: {
             assignedToId: userId,
-            stage: { in: [...PURCHASE_VISIBLE_STAGES] },
+            stage: { in: [...PURCHASE_QUERY_STAGES] },
           },
         }
       }
@@ -176,7 +168,7 @@ export async function buildOwnershipFilterAsync(
   }
 
   const salesScope = await getPurchaseSalesScope(userId)
-  const stageFilter = { in: [...PURCHASE_VISIBLE_STAGES] }
+  const stageFilter = { in: [...PURCHASE_QUERY_STAGES] }
 
   if (resource === 'leads') {
     return {
@@ -256,7 +248,7 @@ export async function canAccessLead(
       return lead.assignedToId === userId
 
     case 'purchase': {
-      if (!PURCHASE_VISIBLE_STAGES.includes(lead.stage as (typeof PURCHASE_VISIBLE_STAGES)[number])) {
+      if (!PURCHASE_QUERY_STAGES.includes(lead.stage as (typeof PURCHASE_QUERY_STAGES)[number])) {
         return false
       }
       if (lead.assignedToId === userId) return true

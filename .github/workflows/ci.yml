@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch makes an in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Real Postgres for the cron concurrency test. The claim guards in
+    # api/v1/cron/* depend on UPDATE ... WHERE atomicity, which a mocked
+    # Prisma client cannot exercise.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: veck_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/veck_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Types in prisma/schema.prisma are generated, not committed — every
+      # later step needs the client to exist before it can typecheck.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npx next lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npx jest --ci
+
+      # `npm run db:push` deliberately sources .env.local, so it cannot be used
+      # here — point Prisma at the service container directly instead.
+      - name: Prepare test database
+        run: npx prisma db push --skip-generate
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+
+      - name: Integration tests (real Postgres)
+        run: npm run test:integration -- --ci
+
+      # DATABASE_URL is only needed so `next build` can collect page data; it is
+      # never connected to. A syntactically valid dummy keeps the build honest
+      # without putting a real credential in CI.
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/veck
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-key

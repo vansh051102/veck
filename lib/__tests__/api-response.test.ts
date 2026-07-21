@@ -1,4 +1,9 @@
-jest.mock('@/lib/logger', () => ({ logger: { error: jest.fn(), info: jest.fn() } }))
+jest.mock('@/lib/logger', () => {
+  const stub = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() }
+  // api-response.ts imports createChildLogger as well as logger; omitting it
+  // made the module throw "createChildLogger is not a function" on import.
+  return { logger: stub, createChildLogger: () => stub }
+})
 
 import { successResponse, errorResponse, paginatedResponse, getPaginationParams, withErrorHandler } from '../api-response'
 import { ValidationError, UnauthorizedError, NotFoundError, ConflictError } from '../errors'

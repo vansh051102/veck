@@ -12,6 +12,28 @@ export const WON_STAGES = ['Order Confirmed'] as const
 /** Legacy stage name kept for one-time DB migration / back-compat reads. */
 export const LEGACY_CLOSED_WON = 'Closed Won'
 
+/**
+ * Stages the purchase role can see: quote handoff (Qualified, Quote Sent) plus
+ * post-order procurement (Order Confirmed, Order Closed). Single source of
+ * truth — used for UI tabs here and for query scoping in lib/ownership.ts.
+ */
+export const PURCHASE_VISIBLE_STAGES = [
+  'Qualified',
+  'Quote Sent',
+  'Order Confirmed',
+  'Order Closed',
+] as const
+
+/**
+ * Same set plus the legacy alias. Use this for DB filters so historical rows
+ * still stored as "Closed Won" remain visible; use PURCHASE_VISIBLE_STAGES for
+ * anything user-facing, which shouldn't render a duplicate legacy tab.
+ */
+export const PURCHASE_QUERY_STAGES = [
+  ...PURCHASE_VISIBLE_STAGES,
+  LEGACY_CLOSED_WON,
+] as const
+
 export function isTerminalStage(stage: string): boolean {
   return (TERMINAL_STAGES as readonly string[]).includes(stage) || stage === LEGACY_CLOSED_WON
 }
@@ -180,6 +202,19 @@ export function isFlaggedDisqualify(fromStage: string, toStage: string): boolean
   return (FLAGGED_DISQUALIFY_FROM as readonly string[]).includes(normalizeStageName(fromStage))
 }
 
+/**
+ * Did this move skip the SOP sequence? Every role is allowed to do it — real
+ * deals go sideways (a quote gets disqualified, a closed order comes back as
+ * lost, a walk-in is qualified on arrival). We don't block those, we record
+ * them with a reason so an admin can review why the SOP was bypassed.
+ */
+export function isOutOfSequence(fromStage: string, toStage: string): boolean {
+  const from = normalizeStageName(fromStage)
+  const to = normalizeStageName(toStage)
+  if (from === to) return false
+  return !(ALLOWED_TRANSITIONS[from] ?? []).includes(to)
+}
+
 // Stages a lead in `currentStage` may legally move to next, per the SOP above.
 export function nextValidStages(currentStage: string): string[] {
   const current = normalizeStageName(currentStage)
@@ -191,7 +226,7 @@ export function nextValidStages(currentStage: string): string[] {
 // Marketing: top of funnel through Qualified (handover to Sales).
 export function visibleStagesForRole(role: string): string[] {
   if (role === 'purchase') {
-    return ['Qualified', 'Quote Sent', 'Order Confirmed', 'Order Closed']
+    return [...PURCHASE_VISIBLE_STAGES]
   }
   if (role.startsWith('marketing')) {
     return ['New Lead', 'Contacted', 'Qualified', 'Disqualified']

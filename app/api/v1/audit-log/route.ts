@@ -37,6 +37,10 @@ export const GET = withErrorHandler(async (req: Request) => {
         resourceType: true,
         resourceName: true,
         timestamp: true,
+        // Without this the admin sees only that a STAGE_CHANGE happened, not
+        // why: logAudit stores the reason and the outOfSequence /
+        // flaggedDisqualify flags here.
+        changes: true,
         user: { select: { fullName: true } },
       },
     }),

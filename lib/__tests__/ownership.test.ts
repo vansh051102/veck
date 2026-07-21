@@ -1,4 +1,9 @@
 import { buildOwnershipFilter, canAccessLead } from '../ownership'
+import { PURCHASE_QUERY_STAGES } from '../lead-stages'
+
+// Reference the shared constant rather than a hand-copied list, so widening or
+// narrowing purchase visibility can't silently drift away from these tests.
+const PURCHASE_STAGES = [...PURCHASE_QUERY_STAGES]
 
 jest.mock('@/lib/db', () => ({
   prisma: {
@@ -19,9 +24,9 @@ describe('buildOwnershipFilter', () => {
     expect(buildOwnershipFilter(U, 'admin', null, 'leads')).toEqual({})
   })
 
-  it('marketing_manager scopes leads to Marketing department', () => {
+  it('marketing_manager sees Marketing-owned plus unassigned leads', () => {
     expect(buildOwnershipFilter(U, 'marketing_manager', null, 'leads')).toEqual({
-      assignedTo: { department: 'Marketing' },
+      OR: [{ assignedToId: null }, { assignedTo: { department: 'Marketing' } }],
     })
   })
 
@@ -32,9 +37,9 @@ describe('buildOwnershipFilter', () => {
     })
   })
 
-  it('sales_manager scopes leads to Sales department', () => {
+  it('sales_manager sees Sales-owned plus unassigned leads', () => {
     expect(buildOwnershipFilter(U, 'sales_manager', null, 'leads')).toEqual({
-      assignedTo: { department: 'Sales' },
+      OR: [{ assignedToId: null }, { assignedTo: { department: 'Sales' } }],
     })
   })
 
@@ -42,19 +47,30 @@ describe('buildOwnershipFilter', () => {
     expect(buildOwnershipFilter(U, 'sales_executive', null, 'leads')).toEqual({ assignedToId: U })
   })
 
-  it('purchase scopes to own leads in Qualified/Quote Sent', () => {
+  it('purchase scopes to own leads in purchase-visible stages', () => {
     expect(buildOwnershipFilter(U, 'purchase', null, 'leads')).toEqual({
       assignedToId: U,
-      stage: { in: ['Qualified', 'Quote Sent'] },
+      stage: { in: PURCHASE_STAGES },
     })
     expect(buildOwnershipFilter(U, 'purchase', null, 'quotes')).toEqual({
-      lead: { assignedToId: U, stage: { in: ['Qualified', 'Quote Sent'] } },
+      lead: { assignedToId: U, stage: { in: PURCHASE_STAGES } },
     })
   })
 
-  it('sales_purchase uses an OR of own + Qualified/Quote Sent', () => {
-    expect(buildOwnershipFilter(U, 'sales_purchase', null, 'leads')).toEqual({
-      OR: [{ assignedToId: U }, { stage: { in: ['Qualified', 'Quote Sent'] } }],
+  it('purchase-visible stages cover quote handoff and post-order procurement', () => {
+    expect(PURCHASE_STAGES).toEqual([
+      'Qualified',
+      'Quote Sent',
+      'Order Confirmed',
+      'Order Closed',
+      'Closed Won',
+    ])
+  })
+
+  it('sales_purchase scopes to own assignments across resources', () => {
+    expect(buildOwnershipFilter(U, 'sales_purchase', null, 'leads')).toEqual({ assignedToId: U })
+    expect(buildOwnershipFilter(U, 'sales_purchase', null, 'quotes')).toEqual({
+      lead: { assignedToId: U },
     })
   })
 

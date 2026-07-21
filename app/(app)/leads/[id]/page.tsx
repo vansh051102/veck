@@ -10,34 +10,50 @@ import { LeadChecklists } from '@/components/lead-checklists'
 import { LeadPurchaseRequests } from '@/components/lead-purchase-requests'
 import { LeadDetailPanel, type LeadDetailData } from '@/components/lead-detail-panel'
 
-// The full lead payload: the tabbed panel's fields plus the extra sections
-// (checklists, purchase requests) that live under the panel on this page.
-interface LeadDetail extends LeadDetailData {
-  checklists: {
-    id: string
-    title: string
-    isRequired: boolean
-    items: { id: string; title: string; completed: boolean }[]
-  }[]
-  purchaseRequests: {
-    id: string
-    prNumber: string
-    status: string
-    estimatedAmount: string
-    estimatedQuantity: number
-  }[]
+// GET /leads/:id deliberately keeps its payload lean — checklists and purchase
+// requests are unbounded and were pulled out of it to stop the response
+// stalling under load (see the comment in that route). They are fetched here
+// from their own endpoints instead; previously this page declared them on the
+// lead payload and read lead.checklists, which was always undefined and threw
+// before anything on the page could render.
+type LeadDetail = LeadDetailData
+
+interface Checklist {
+  id: string
+  title: string
+  isRequired: boolean
+  items: { id: string; title: string; completed: boolean }[]
+}
+
+interface PurchaseRequest {
+  id: string
+  prNumber: string
+  status: string
+  estimatedAmount: string
+  estimatedQuantity: number
 }
 
 export default function LeadDetailPage() {
   const params = useParams<{ id: string }>()
   const [lead, setLead] = useState<LeadDetail | null>(null)
+  const [checklists, setChecklists] = useState<Checklist[]>([])
+  const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get<LeadDetail>(`/leads/${params.id}`)
-      setLead(res.data ?? null)
+      // The lead itself decides whether the page renders at all; the two side
+      // sections are fetched alongside it but must not be able to blank the
+      // page if they fail, so they settle independently and fall back to [].
+      const [leadRes, checklistRes, prRes] = await Promise.all([
+        api.get<LeadDetail>(`/leads/${params.id}`),
+        api.get<Checklist[]>(`/leads/${params.id}/checklists`).catch(() => null),
+        api.get<PurchaseRequest[]>(`/leads/${params.id}/purchase-requests`).catch(() => null),
+      ])
+      setLead(leadRes.data ?? null)
+      setChecklists(checklistRes?.data ?? [])
+      setPurchaseRequests(prRes?.data ?? [])
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load lead')
     } finally {
@@ -69,7 +85,7 @@ export default function LeadDetailPage() {
           <CardContent>
             <LeadChecklists
               leadId={lead.id}
-              checklists={lead.checklists}
+              checklists={checklists}
               onChanged={load}
               renderActions={(onShow) => (
                 <PermissionGate permission="checklists:create">
@@ -89,7 +105,7 @@ export default function LeadDetailPage() {
           <CardContent>
             <LeadPurchaseRequests
               leadId={lead.id}
-              purchaseRequests={lead.purchaseRequests}
+              purchaseRequests={purchaseRequests}
               onChanged={load}
               renderActions={(onShow) => (
                 <PermissionGate permission="purchase_requests:create">

@@ -7,6 +7,7 @@ import {
   assertRoleCanTransition,
   TERMINAL_STAGES,
 } from '../workflow'
+import { isOutOfSequence, isFlaggedDisqualify } from '../lead-stages'
 import { ValidationError, ConflictError } from '../api-response'
 import type { Lead } from '@prisma/client'
 
@@ -181,6 +182,47 @@ describe('assertTransitionAllowed', () => {
   it('allows reopening a terminal lead back to an active stage', () => {
     const lead = makeLead({ stage: 'Order Closed' })
     expect(() => assertTransitionAllowed(lead, 'Contacted')).not.toThrow()
+  })
+
+  // Skipping is permitted for every role but must be recorded — the stage route
+  // uses isOutOfSequence to demand a reason and flag the timeline entry.
+  describe('isOutOfSequence flags the jumps admins need to review', () => {
+    it.each([
+      ['Order Closed', 'Deal Lost'],
+      ['New Lead', 'Deal Lost'],
+      ['Contacted', 'Deal Lost'],
+      ['New Lead', 'Quote Sent'],
+    ])('flags %s -> %s', (from, to) => {
+      expect(isOutOfSequence(from, to)).toBe(true)
+    })
+
+    // Disqualifying after real engagement is *in* sequence, so it is caught by
+    // the narrower isFlaggedDisqualify check instead. Both flags land on the
+    // timeline and the STAGE_CHANGE audit entry.
+    it.each([
+      ['Qualified', 'Disqualified'],
+      ['Quote Sent', 'Disqualified'],
+    ])('routes %s -> %s through the flagged-disqualify check', (from, to) => {
+      expect(isOutOfSequence(from, to)).toBe(false)
+      expect(isFlaggedDisqualify(from, to)).toBe(true)
+    })
+
+    it.each([
+      ['New Lead', 'Contacted'],
+      ['Contacted', 'Qualified'],
+      ['Qualified', 'Quote Sent'],
+      ['Quote Sent', 'Order Confirmed'],
+    ])('does not flag the normal step %s -> %s', (from, to) => {
+      expect(isOutOfSequence(from, to)).toBe(false)
+    })
+
+    it('does not flag a no-op move to the same stage', () => {
+      expect(isOutOfSequence('Qualified', 'Qualified')).toBe(false)
+    })
+
+    it('normalizes the legacy Closed Won alias', () => {
+      expect(isOutOfSequence('Closed Won', 'Order Closed')).toBe(false)
+    })
   })
 
   it('requires a reason when moving to Disqualified', () => {

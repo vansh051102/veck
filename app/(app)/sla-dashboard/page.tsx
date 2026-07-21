@@ -116,7 +116,7 @@ export default function MySLADashboardPage() {
 
       {/* My KRA Metrics */}
       <section>
-        <h2 className="text-lg font-semibold mb-3">My Today's KRA Metrics</h2>
+        <h2 className="text-lg font-semibold mb-3">My Today&apos;s KRA Metrics</h2>
         <div className="grid grid-cols-3 gap-4">
           {kraMetrics.map((kra) => (
             <div key={kra.metric} className="rounded-lg border border-border p-4">
