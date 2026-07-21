@@ -29,53 +29,64 @@ function LoginForm() {
     setError(null)
     setLoading(true)
 
-    const { error: signInError } = await supabaseBrowser.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    })
-
-    if (signInError) {
-      setLoading(false)
-      setError(
-        signInError.message === 'Invalid login credentials'
-          ? 'Email or password is incorrect'
-          : signInError.message
-      )
-      return
-    }
-
-    const redirectTo = searchParams.get('redirectTo')
-    if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
-      router.push(redirectTo)
-      router.refresh()
-      return
-    }
-
+    // Everything from here on is wrapped so setLoading(false) is guaranteed to
+    // run exactly once, no matter which branch returns or throws. Previously
+    // signInWithPassword itself had no try/catch: if it rejected (network
+    // blip, DNS failure — anything short of a clean {error} response) the
+    // button froze on "Signing in…" forever, since nothing after the throw
+    // ever ran.
     try {
-      const {
-        data: { session },
-      } = await supabaseBrowser.auth.getSession()
-      if (session?.access_token) {
-        const res = await fetch('/api/v1/auth/me', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        })
-        if (res.ok) {
-          const body = await res.json()
-          const user = body.data?.user ?? body.user
-          const defaultPath = user?.defaultDashboard || dashboardRouteForRole(user?.role ?? 'admin')
-          setLoading(false)
-          router.push(defaultPath)
-          router.refresh()
-          return
-        }
-      }
-    } catch {
-      // fall through
-    }
+      const { error: signInError } = await supabaseBrowser.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
 
-    setLoading(false)
-    router.push('/dashboard')
-    router.refresh()
+      if (signInError) {
+        setError(
+          signInError.message === 'Invalid login credentials'
+            ? 'Email or password is incorrect'
+            : signInError.message
+        )
+        return
+      }
+
+      const redirectTo = searchParams.get('redirectTo')
+      if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
+        router.push(redirectTo)
+        router.refresh()
+        return
+      }
+
+      try {
+        const {
+          data: { session },
+        } = await supabaseBrowser.auth.getSession()
+        if (session?.access_token) {
+          const res = await fetch('/api/v1/auth/me', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+          if (res.ok) {
+            const body = await res.json()
+            const user = body.data?.user ?? body.user
+            const defaultPath = user?.defaultDashboard || dashboardRouteForRole(user?.role ?? 'admin')
+            router.push(defaultPath)
+            router.refresh()
+            return
+          }
+        }
+      } catch {
+        // fall through to the default redirect below
+      }
+
+      router.push('/dashboard')
+      router.refresh()
+    } catch (err) {
+      // signInWithPassword (or anything above) threw rather than resolving
+      // with a clean {error} — most likely a network failure.
+      setError(err instanceof Error ? err.message : 'Network error — please try again')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

@@ -33,9 +33,20 @@ type SessionData = {
 // /api/internal/session round-trip instead of stampeding Prisma.
 const SESSION_TTL_MS = 30_000
 const sessionCache = new Map<string, { data: SessionData; expires: number }>()
-const sessionInflight = new Map<string, Promise<SessionData | null>>()
 
-async function resolveSession(req: NextRequest, accessToken?: string): Promise<SessionData | null> {
+// Three-state result, not two: /api/internal/session's own prisma.user.findUnique
+// call shares the same DATABASE_URL pool as every other route, so it can fail
+// under load with no signal that the user's Supabase session is actually invalid.
+//   - SessionData: resolved successfully
+//   - null: a DEFINITIVE answer that there is no valid session (401/404) —
+//     redirect to login
+//   - undefined: INDETERMINATE — a network error or 5xx (e.g. a pool_timeout).
+//     The caller must not treat this as a logout; the Supabase-level session
+//     check that runs before this is what actually gates real auth.
+type SessionResolution = SessionData | null | undefined
+const sessionInflight = new Map<string, Promise<SessionResolution>>()
+
+async function resolveSession(req: NextRequest, accessToken?: string): Promise<SessionResolution> {
   const cacheKey = accessToken ?? '__dev__'
   const hit = sessionCache.get(cacheKey)
   if (hit && hit.expires > Date.now()) {
@@ -45,7 +56,7 @@ async function resolveSession(req: NextRequest, accessToken?: string): Promise<S
   const pending = sessionInflight.get(cacheKey)
   if (pending) return pending
 
-  const promise = (async (): Promise<SessionData | null> => {
+  const promise = (async (): Promise<SessionResolution> => {
     try {
       const sessionRes = await fetch(new URL('/api/internal/session', req.url), {
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
@@ -55,10 +66,20 @@ async function resolveSession(req: NextRequest, accessToken?: string): Promise<S
         sessionCache.set(cacheKey, { data, expires: Date.now() + SESSION_TTL_MS })
         return data
       }
+      if (sessionRes.status === 401 || sessionRes.status === 404) {
+        // Definitive: no such user / no valid token.
+        return null
+      }
+      // Any other status (5xx from an unhandled DB error, etc.) is a server
+      // hiccup, not a real "you're not authenticated" answer.
+      console.error(`resolveSession: unexpected status ${sessionRes.status}`)
+      return undefined
     } catch (error) {
+      // Network-level failure reaching /api/internal/session — also
+      // indeterminate, not a definitive "no session."
       console.error('Error resolving session:', error)
+      return undefined
     }
-    return null
   })().finally(() => {
     sessionInflight.delete(cacheKey)
   })
@@ -144,8 +165,18 @@ export async function middleware(req: NextRequest) {
 
   const sessionData = await resolveSession(req, session.access_token)
 
-  if (!sessionData) {
+  if (sessionData === null) {
+    // Definitive: /api/internal/session said this token has no valid user.
     return NextResponse.redirect(new URL('/auth/login', req.url))
+  }
+
+  if (sessionData === undefined) {
+    // Indeterminate — a DB hiccup resolving the app-level user record, not a
+    // real logout. The Supabase session above is valid, so don't bounce the
+    // user to /auth/login over a transient error; pass through unenriched.
+    // Any API call this page makes still authenticates independently via
+    // validateRequest's Bearer-token fallback (lib/middleware/validate-headers.ts).
+    return res
   }
 
   if (sessionData.status !== 'active') {
