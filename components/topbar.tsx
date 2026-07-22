@@ -29,9 +29,14 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const initial = me?.fullName?.[0]?.toUpperCase() ?? '?'
 
   async function handleSignOut() {
-    await supabaseBrowser.auth.signOut()
-    router.push('/auth/login')
-    router.refresh()
+    // signOut() can reject rather than resolve — still navigate to login
+    // either way, since that's the point of clicking sign out.
+    try {
+      await supabaseBrowser.auth.signOut()
+    } finally {
+      router.push('/auth/login')
+      router.refresh()
+    }
   }
 
   return (

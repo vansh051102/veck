@@ -23,16 +23,24 @@ export default function ForgotPasswordPage() {
     setError(null)
     setLoading(true)
 
-    const { error: resetError } = await supabaseBrowser.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/auth/login`,
-    })
-
-    setLoading(false)
-    if (resetError) {
-      setError(resetError.message)
-      return
+    // try/finally: resetPasswordForEmail can reject (network failure) rather
+    // than resolve with {error} — without this, that path left the button
+    // frozen on "Sending…" forever, same bug as the login form had.
+    try {
+      const { error: resetError } = await supabaseBrowser.auth.resetPasswordForEmail(
+        email.trim(),
+        { redirectTo: `${window.location.origin}/auth/login` }
+      )
+      if (resetError) {
+        setError(resetError.message)
+        return
+      }
+      setSent(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error — please try again')
+    } finally {
+      setLoading(false)
     }
-    setSent(true)
   }
 
   return (

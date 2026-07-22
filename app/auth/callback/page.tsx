@@ -1,6 +1,7 @@
 'use client'
 
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 
@@ -14,27 +15,57 @@ import { supabaseBrowser } from '@/lib/supabase-browser'
 function CallbackInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function run() {
       const next = searchParams.get('next') ?? '/dashboard'
       const code = searchParams.get('code')
 
-      if (code) {
-        await supabaseBrowser.auth.exchangeCodeForSession(code)
-      } else if (typeof window !== 'undefined' && window.location.hash) {
-        const hashParams = new URLSearchParams(window.location.hash.slice(1))
-        const access_token = hashParams.get('access_token')
-        const refresh_token = hashParams.get('refresh_token')
-        if (access_token && refresh_token) {
-          await supabaseBrowser.auth.setSession({ access_token, refresh_token })
+      try {
+        if (code) {
+          const { error: exchangeError } = await supabaseBrowser.auth.exchangeCodeForSession(code)
+          if (exchangeError) {
+            setError(exchangeError.message)
+            return
+          }
+        } else if (typeof window !== 'undefined' && window.location.hash) {
+          const hashParams = new URLSearchParams(window.location.hash.slice(1))
+          const access_token = hashParams.get('access_token')
+          const refresh_token = hashParams.get('refresh_token')
+          if (access_token && refresh_token) {
+            const { error: sessionError } = await supabaseBrowser.auth.setSession({
+              access_token,
+              refresh_token,
+            })
+            if (sessionError) {
+              setError(sessionError.message)
+              return
+            }
+          }
         }
-      }
 
-      router.replace(next)
+        router.replace(next)
+      } catch (err) {
+        // exchangeCodeForSession/setSession can also reject outright (network
+        // failure) rather than resolve with {error} — without this, that path
+        // left the page stuck on "Signing in…" forever with no way out.
+        setError(err instanceof Error ? err.message : 'Network error — please try again')
+      }
     }
     run()
   }, [router, searchParams])
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center gap-3 text-center">
+        <p className="text-sm text-destructive">{error}</p>
+        <Link href="/auth/login" className="text-sm underline underline-offset-4">
+          Back to sign in
+        </Link>
+      </div>
+    )
+  }
 
   return <div className="text-sm text-muted-foreground">Signing in…</div>
 }

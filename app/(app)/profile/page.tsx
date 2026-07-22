@@ -75,15 +75,23 @@ export default function ProfilePage() {
       return
     }
     setPasswordSaving(true)
-    const { error } = await supabaseBrowser.auth.updateUser({ password: newPassword })
-    setPasswordSaving(false)
-    if (error) {
-      setPasswordError(error.message)
-      return
+    // try/finally: updateUser can reject (network failure) rather than resolve
+    // with {error} — without this, that path left the button frozen on
+    // "Saving…" forever, same bug as the login form had.
+    try {
+      const { error } = await supabaseBrowser.auth.updateUser({ password: newPassword })
+      if (error) {
+        setPasswordError(error.message)
+        return
+      }
+      setNewPassword('')
+      setConfirmPassword('')
+      toast('Password updated')
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Network error — please try again')
+    } finally {
+      setPasswordSaving(false)
     }
-    setNewPassword('')
-    setConfirmPassword('')
-    toast('Password updated')
   }
 
   async function handleEmailSave(e: React.FormEvent) {
@@ -94,14 +102,19 @@ export default function ProfilePage() {
       return
     }
     setEmailSaving(true)
-    const { error } = await supabaseBrowser.auth.updateUser({ email: newEmail.trim() })
-    setEmailSaving(false)
-    if (error) {
-      setEmailError(error.message)
-      return
+    try {
+      const { error } = await supabaseBrowser.auth.updateUser({ email: newEmail.trim() })
+      if (error) {
+        setEmailError(error.message)
+        return
+      }
+      setEmailChangeRequested(true)
+      setNewEmail('')
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : 'Network error — please try again')
+    } finally {
+      setEmailSaving(false)
     }
-    setEmailChangeRequested(true)
-    setNewEmail('')
   }
 
   return (

@@ -9,9 +9,14 @@ export default function InactiveAccountPage() {
   const router = useRouter()
 
   async function handleSignOut() {
-    await supabaseBrowser.auth.signOut()
-    router.push('/auth/login')
-    router.refresh()
+    // signOut() can reject rather than resolve — still navigate to login
+    // either way, since that's the point of clicking sign out.
+    try {
+      await supabaseBrowser.auth.signOut()
+    } finally {
+      router.push('/auth/login')
+      router.refresh()
+    }
   }
 
   return (
