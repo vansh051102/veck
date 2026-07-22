@@ -1,34 +1,20 @@
 import { successResponse, withErrorHandler, UnauthorizedError } from '@/lib/api-response'
 import { rbacService } from '@/lib/services/rbac.service'
-import { isAuthDisabled } from '@/lib/dev-auth'
-import { resolveDevBypassUser } from '@/lib/dev-bootstrap'
+import { validateRequest } from '@/lib/middleware/validate-headers'
 
 export const GET = withErrorHandler(async (req) => {
-  if (!isAuthDisabled()) {
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedError('Missing or invalid authorization header')
-    }
-  }
-
-  let userId = req.headers.get('x-user-id')
-  let orgId = req.headers.get('x-org-id')
-
-  if ((!userId || !orgId) && isAuthDisabled()) {
-    const bypass = await resolveDevBypassUser()
-    if (bypass) {
-      userId = bypass.id
-      orgId = bypass.orgId
-    }
-  }
-
-  if (!userId || !orgId) {
-    throw new UnauthorizedError('User context not found')
-  }
+  // Resolve via the same header-first, Bearer-fallback chain every other
+  // route uses. This route used to read x-user-id/x-org-id directly with no
+  // fallback: whenever middleware.ts couldn't attach those headers (a
+  // transient DB hiccup resolving the session, or a cache-cold request),
+  // every page depending on AuthProvider -- i.e. the entire authenticated
+  // app, since it wraps both app/(app)/layout.tsx and app/admin/layout.tsx --
+  // broke, even though the caller's Bearer token was perfectly valid.
+  const ctx = await validateRequest(req)
 
   const { prisma } = await import('@/lib/db')
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: ctx.userId },
     include: {
       org: {
         select: {
@@ -58,7 +44,7 @@ export const GET = withErrorHandler(async (req) => {
     throw new UnauthorizedError('User is not active')
   }
 
-  const perms = await rbacService.getUserPermissions(userId)
+  const perms = await rbacService.getUserPermissions(ctx.userId)
   const permissions = perms.hasWildcard ? ['*'] : perms.permissions
 
   return successResponse({
