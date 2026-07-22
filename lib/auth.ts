@@ -58,45 +58,56 @@ export async function signUp(
       .replace(/^-|-$/g, '')
       .slice(0, 48)
 
-    const org = await prisma.organization.create({
-      data: {
-        name: orgName.trim(),
-        slug: `${slugBase || 'workspace'}-${Date.now()}`,
-        subscriptionPlan: 'free',
-      },
-    })
+    // One transaction for all four writes: previously these ran as separate
+    // calls, so a failure in seedDefaultRoles or settings.create after the
+    // org/user rows were already committed left them orphaned — no Supabase
+    // Auth account (the catch block below only cleans that up), but a User
+    // row that permanently blocks that email from ever signing up again via
+    // the "already exists" check above, with no way back in. Now either all
+    // four commit together or none do.
+    const { org, dbUser } = await prisma.$transaction(async (tx) => {
+      const org = await tx.organization.create({
+        data: {
+          name: orgName.trim(),
+          slug: `${slugBase || 'workspace'}-${Date.now()}`,
+          subscriptionPlan: 'free',
+        },
+      })
 
-    const dbUser = await prisma.user.create({
-      data: {
-        id: user.id,
-        email: normalizedEmail,
-        fullName: fullName.trim(),
-        orgId: org.id,
-        role: 'admin',
-        department: null,
-        defaultDashboard: '/admin',
-      },
-      include: { org: true },
-    })
+      const dbUser = await tx.user.create({
+        data: {
+          id: user.id,
+          email: normalizedEmail,
+          fullName: fullName.trim(),
+          orgId: org.id,
+          role: 'admin',
+          department: null,
+          defaultDashboard: '/admin',
+        },
+        include: { org: true },
+      })
 
-    await seedDefaultRoles(org.id)
+      await seedDefaultRoles(org.id, tx)
 
-    await prisma.settings.create({
-      data: {
-        orgId: org.id,
-        updatedBy: user.id,
-        workflowStages: { stages: defaultWorkflowStages() } as unknown as Prisma.InputJsonValue,
-        moduleAccess: {
-          leads: true,
-          lead_message_logs: true,
-          contacts: true,
-          lead_generation_campaigns: false,
-          customer_folders: true,
-          auto_create_folders: true,
-          quotations: true,
-        } as Prisma.InputJsonValue,
-        roleHierarchy: [] as Prisma.InputJsonValue,
-      },
+      await tx.settings.create({
+        data: {
+          orgId: org.id,
+          updatedBy: user.id,
+          workflowStages: { stages: defaultWorkflowStages() } as unknown as Prisma.InputJsonValue,
+          moduleAccess: {
+            leads: true,
+            lead_message_logs: true,
+            contacts: true,
+            lead_generation_campaigns: false,
+            customer_folders: true,
+            auto_create_folders: true,
+            quotations: true,
+          } as Prisma.InputJsonValue,
+          roleHierarchy: [] as Prisma.InputJsonValue,
+        },
+      })
+
+      return { org, dbUser }
     })
 
     return { user: dbUser, org }

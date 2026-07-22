@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from './db'
 import { ROLE_PERMISSIONS } from './permissions'
 
@@ -73,10 +74,19 @@ const DEFAULT_ROLES: RoleDefinition[] = [
  * Seed default roles for an organization.
  * Safe to call multiple times — uses upsert so it won't create duplicates.
  * Call this on org creation or during migration.
+ *
+ * Pass `db` when calling this from inside a $transaction — the org row is
+ * only visible on that transaction's own connection until it commits, so
+ * calling this with the global `prisma` client from inside another
+ * transaction's callback fails with a foreign key constraint violation
+ * (the org doesn't exist yet from that separate connection's point of view).
  */
-export async function seedDefaultRoles(orgId: string): Promise<void> {
+export async function seedDefaultRoles(
+  orgId: string,
+  db: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<void> {
   for (const role of DEFAULT_ROLES) {
-    await prisma.role.upsert({
+    await db.role.upsert({
       where: {
         orgId_name: { orgId, name: role.name },
       },

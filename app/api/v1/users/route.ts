@@ -74,35 +74,47 @@ export const POST = withErrorHandler(async (req) => {
   if (authError) throw new ValidationError('Failed to create auth user', { message: authError.message })
   if (!authUser) throw new ValidationError('Failed to create auth user')
 
-  const dbUser = await prisma.user.create({
-    data: {
-      id: authUser.id,
-      email,
-      fullName,
-      phone: phone || null,
-      orgId,
-      role,
-      department: department || null,
-      designation: designation || null,
-      territory: territory || null,
-      branch: branch || null,
-      reportsToId: reportsToId || null,
-    },
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      phone: true,
-      role: true,
-      department: true,
-      designation: true,
-      territory: true,
-      branch: true,
-      reportsToId: true,
-      status: true,
-      createdAt: true,
-    },
-  })
+  // If the Prisma write fails after the Supabase Auth account was already
+  // created (DB hiccup, unexpected constraint), roll back the auth account —
+  // otherwise it's orphaned: no User row, but the email is now taken in
+  // Supabase, so re-inviting the same address fails confusingly instead of
+  // just working. Same rollback pattern as lib/auth.ts's signUp().
+  try {
+    const dbUser = await prisma.user.create({
+      data: {
+        id: authUser.id,
+        email,
+        fullName,
+        phone: phone || null,
+        orgId,
+        role,
+        department: department || null,
+        designation: designation || null,
+        territory: territory || null,
+        branch: branch || null,
+        reportsToId: reportsToId || null,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
+        department: true,
+        designation: true,
+        territory: true,
+        branch: true,
+        reportsToId: true,
+        status: true,
+        createdAt: true,
+      },
+    })
 
-  return successResponse(dbUser, { statusCode: 201 })
+    return successResponse(dbUser, { statusCode: 201 })
+  } catch (err) {
+    await supabaseAdmin.auth.admin.deleteUser(authUser.id).catch(() => {
+      // Best-effort — the Prisma error below is what the caller needs to see.
+    })
+    throw err
+  }
 })
