@@ -83,7 +83,7 @@ export const POST = withErrorHandler(async (req: Request) => {
       },
     })
 
-    await seedDefaultRoles(created.id)
+    await seedDefaultRoles(created.id, tx)
 
     await tx.settings.create({
       data: {
