@@ -140,6 +140,36 @@ export function errorResponse(error: unknown) {
     )
   }
 
+  // Raw connection failures (pool exhaustion via P2024 is handled above;
+  // these are the "can't reach / init failed" family) — DB is unreachable,
+  // not misused, so 503 + retry-worthy message rather than a generic 500.
+  if (
+    error instanceof Error &&
+    // clientVersion is set on every @prisma/client error class — scopes the
+    // message-substring fallback to Prisma errors only, so an unrelated
+    // application error that happens to say "timeout" isn't misclassified.
+    'clientVersion' in error &&
+    (error.name === 'PrismaClientInitializationError' ||
+      ['P1001', 'P1002', 'P1008', 'P1017'].includes((error as any).code) ||
+      /\b(connection|timeout|pool)\b/i.test(error.message))
+  ) {
+    logger.error({ err: error }, 'Database connection error in API route')
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'DATABASE_UNAVAILABLE',
+          message: 'Unable to connect to the database. Please try again.',
+        },
+        meta: {
+          statusCode: 503,
+          timestamp: new Date().toISOString(),
+        },
+      },
+      { status: 503 }
+    )
+  }
+
   if (error instanceof Error && error.name === 'PrismaClientValidationError') {
     logger.error({ err: error }, 'Prisma validation error in API route')
     return NextResponse.json(

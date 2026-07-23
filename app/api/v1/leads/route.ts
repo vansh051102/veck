@@ -1,7 +1,10 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { CreateLeadSchema, LEAD_STAGES, LEAD_PRIORITIES } from '@/lib/validation'
+import { AppError } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   successResponse,
   paginatedResponse,
@@ -9,6 +12,7 @@ import {
   NotFoundError,
   ValidationError,
   ConflictError,
+  InternalServerError,
   getPaginationParams,
 } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
@@ -36,18 +40,31 @@ export const POST = withErrorHandler(async (req) => {
   })
   if (!contact) throw new NotFoundError('Contact')
 
-  const result = await createLeadWithDefaults({
-    orgId: ctx.orgId,
-    contactId: input.contactId,
-    companyName: input.companyName,
-    priority: input.priority,
-    notes: input.notes,
-    source: input.source,
-    sourceDetails: input.sourceDetails,
-    tags: input.tags,
-    createdById: ctx.userId,
-    creatorRole: ctx.role,
-  })
+  // createLeadWithDefaults's transaction body calls pickAssignee/startSlaClock/
+  // createSopChecklistsForStage — a bug or missing-config edge case in any of
+  // those throws a plain, unnamed Error that would otherwise fall through
+  // errorResponse()'s catch-all as an opaque "Unexpected error occurred" even
+  // though nothing about the user's input was invalid. Surface it as a
+  // scoped, retry-able message instead, while still logging the real cause.
+  let result
+  try {
+    result = await createLeadWithDefaults({
+      orgId: ctx.orgId,
+      contactId: input.contactId,
+      companyName: input.companyName,
+      priority: input.priority,
+      notes: input.notes,
+      source: input.source,
+      sourceDetails: input.sourceDetails,
+      tags: input.tags,
+      createdById: ctx.userId,
+      creatorRole: ctx.role,
+    })
+  } catch (err) {
+    if (err instanceof AppError || err instanceof Prisma.PrismaClientKnownRequestError) throw err
+    logger.error({ err }, 'createLeadWithDefaults failed unexpectedly')
+    throw new InternalServerError('Could not create lead — please retry')
+  }
 
   if (result.duplicate) {
     throw new ConflictError(

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 
 // Magic-link landing page. Supabase redirects here after verifying the
@@ -13,7 +13,6 @@ import { supabaseBrowser } from '@/lib/supabase-browser'
 // supabaseBrowser (auth-helpers-nextjs) writes the resulting session into
 // cookies, which is what middleware's getSession() reads on the next request.
 function CallbackInner() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const [error, setError] = useState<string | null>(null)
 
@@ -45,7 +44,13 @@ function CallbackInner() {
           }
         }
 
-        router.replace(next)
+        // Hard navigation, not router.replace: a quick-logged-in tab reused
+        // for a different account can still hold the previous user's Next.js
+        // router cache, flashing stale data before the fresh RSC payload
+        // resolves. A full reload wipes router cache, React state, and any
+        // stale in-memory Supabase client instance.
+        const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'
+        window.location.href = safeNext
       } catch (err) {
         // exchangeCodeForSession/setSession can also reject outright (network
         // failure) rather than resolve with {error} — without this, that path
@@ -54,7 +59,7 @@ function CallbackInner() {
       }
     }
     run()
-  }, [router, searchParams])
+  }, [searchParams])
 
   if (error) {
     return (

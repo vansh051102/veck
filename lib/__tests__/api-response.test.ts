@@ -7,6 +7,7 @@ jest.mock('@/lib/logger', () => {
 
 import { successResponse, errorResponse, paginatedResponse, getPaginationParams, withErrorHandler } from '../api-response'
 import { ValidationError, UnauthorizedError, NotFoundError, ConflictError } from '../errors'
+import { CreateContactSchema, CreateLeadSchema } from '../validation'
 import { logger } from '../logger'
 
 const mockedLogger = logger as unknown as { error: jest.Mock; info: jest.Mock }
@@ -59,6 +60,44 @@ describe('errorResponse', () => {
   it('includes ValidationError details when present', async () => {
     const res = await errorResponse(new ValidationError('Bad', { field: 'email' })).json()
     expect(res.error.details).toEqual({ field: 'email' })
+  })
+
+  // End-to-end wiring proof: a Zod rejection on the new-lead form's inputs
+  // must surface as per-field messages (error.details.fieldErrors.<field>),
+  // not the generic 500 banner — this is what lib/form-errors.ts and
+  // components/new-lead-form.tsx read to render inline errors.
+  it('surfaces per-field messages for an invalid contact (name/email/phone)', async () => {
+    const parsed = CreateContactSchema.safeParse({
+      firstName: '',
+      lastName: 'Kumar',
+      email: 'not-an-email',
+      phone: 'call me maybe',
+    })
+    expect(parsed.success).toBe(false)
+    if (parsed.success) throw new Error('expected failure')
+
+    const res = await errorResponse(
+      new ValidationError('Invalid contact data', parsed.error.flatten())
+    ).json()
+
+    expect(res.error.details.fieldErrors.firstName).toEqual(['First name is required'])
+    expect(res.error.details.fieldErrors.email).toEqual(['Invalid email address'])
+    expect(res.error.details.fieldErrors.phone).toEqual(['Invalid phone number'])
+  })
+
+  it('surfaces a per-field message for an invalid lead companyName', async () => {
+    const parsed = CreateLeadSchema.safeParse({
+      contactId: '123e4567-e89b-12d3-a456-426614174000',
+      companyName: '',
+    })
+    expect(parsed.success).toBe(false)
+    if (parsed.success) throw new Error('expected failure')
+
+    const res = await errorResponse(
+      new ValidationError('Invalid lead data', parsed.error.flatten())
+    ).json()
+
+    expect(res.error.details.fieldErrors.companyName).toEqual(['Company name is required'])
   })
 
   it('returns 401 for UnauthorizedError', async () => {
