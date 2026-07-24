@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { UpdateLeadSchema } from '@/lib/validation'
 import { isTerminalStage } from '@/lib/lead-stages'
+import { StaleVersionError } from '@/lib/errors'
 import {
   successResponse,
   withErrorHandler,
@@ -12,6 +13,7 @@ import {
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
 import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
+import { resolveMaskedFields, applyLeadFieldMask } from '@/lib/lead-serializer'
 
 interface Params {
   params: { id: string }
@@ -66,7 +68,8 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
 
   if (!lead) throw new NotFoundError('Lead')
 
-  return successResponse(lead)
+  const maskedFields = await resolveMaskedFields(ctx.orgId, ctx.userId, ctx.role)
+  return successResponse(maskedFields.length ? applyLeadFieldMask(lead, maskedFields) : lead)
 })
 
 // PUT /api/v1/leads/:id - Update lead fields (not stage/assignment - use dedicated endpoints)
@@ -90,19 +93,27 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     throw new ValidationError('Invalid lead data', parsed.error.flatten())
   }
 
+  // Optimistic lock: only enforced when the client sends a version (older
+  // clients / internal callers that omit it keep today's last-write-wins
+  // behavior). Advisory read-then-write check, not an atomic guard — the
+  // mutation itself still only touches this one row.
+  const { version: clientVersion, ...updateData } = parsed.data
+  if (clientVersion !== undefined && clientVersion !== existing.version) {
+    throw new StaleVersionError(existing)
+  }
+
   // Track changed fields for timeline
   const changedFields: Record<string, { from: unknown; to: unknown }> = {}
-  const updateData = parsed.data
   for (const key of Object.keys(updateData)) {
     const k = key as keyof typeof updateData
-    if (updateData[k] !== existing[k]) {
-      changedFields[k] = { from: existing[k], to: updateData[k] }
+    if (updateData[k] !== existing[k as keyof typeof existing]) {
+      changedFields[k] = { from: existing[k as keyof typeof existing], to: updateData[k] }
     }
   }
 
   const lead = await prisma.lead.update({
     where: { id: params.id },
-    data: updateData,
+    data: { ...updateData, version: { increment: 1 } },
   })
 
   await logAudit(ctx.orgId, ctx.userId, 'UPDATE', 'Lead', lead.id, lead.companyName, updateData)

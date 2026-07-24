@@ -23,7 +23,7 @@ export interface LeadRow {
   slaDeadline?: string | null
   createdAt: string
   lastActivityAt: string
-  contact: { firstName: string; lastName: string; email: string; phone?: string | null } | null
+  contact: { id: string; firstName: string; lastName: string; email: string; phone?: string | null } | null
   assignedTo: { id?: string; fullName: string } | null
   assignedToId?: string | null
   createdBy?: { id: string; fullName: string } | null
@@ -56,6 +56,11 @@ export type SortBy =
   | 'stage'
   | 'lastActivityAt'
   | 'slaDeadline'
+  | 'quotationValue'
+  | 'orderValue'
+  | 'supplierMargin'
+  | 'totalCalls'
+  | 'totalMessages'
 export type SortDir = 'asc' | 'desc'
 
 /** @deprecated prefer StatusPill — kept for kanban Badge variants */

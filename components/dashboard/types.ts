@@ -12,6 +12,16 @@ export interface DashboardStats {
   // Sales-only
   activitiesThisWeek?: number
   dealAgingBuckets?: { '0-7d': number; '8-30d': number; '30d+': number }
+  closeRate?: number | null
+  callsToday?: number
+  messagesToday?: number
+  overdueFollowUps?: {
+    id: string
+    leadId: string
+    title: string
+    scheduledFor: string | null
+    lead: { companyName: string } | null
+  }[]
   // Purchase-only
   avgQualifiedToQuoteSentHours?: number | null
   // Admin-only
@@ -26,6 +36,21 @@ export interface DashboardStats {
     assignedTo: { fullName: string } | null
   }[]
   flaggedDisqualifications?: { fullName: string; count: number; lastAt: string }[]
+  pipelineByClosingHorizon?: Record<string, number>
+  highMarginLeads?: {
+    id: string
+    companyName: string
+    supplierMargin: number | null
+    assignedTo: { fullName: string } | null
+  }[]
+  regionalRevenue?: { territory: string; totalOrderValue: number; leadCount: number }[]
+  recentImportExportActivity?: {
+    id: string
+    action: string
+    resourceName: string | null
+    userFullName: string
+    timestamp: string
+  }[]
 }
 
 export interface LeadSummary {

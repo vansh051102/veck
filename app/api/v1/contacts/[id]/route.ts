@@ -18,7 +18,19 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
 
   const contact = await prisma.contact.findFirst({
     where: { id: params.id, orgId },
-    include: { leads: { select: { id: true, companyName: true, stage: true, createdAt: true } } },
+    include: {
+      leads: {
+        select: {
+          id: true,
+          companyName: true,
+          stage: true,
+          createdAt: true,
+          timeline: {
+            select: { events: { orderBy: { createdAt: 'desc' }, take: 20 } },
+          },
+        },
+      },
+    },
   })
   if (!contact) throw new NotFoundError('Contact')
 

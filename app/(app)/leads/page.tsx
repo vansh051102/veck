@@ -33,6 +33,7 @@ import {
   fetchLeads,
   getCachedLeads,
   type LeadListQuery,
+  type AdvancedLeadFilters,
 } from '@/lib/leads-cache'
 import { useLeadsLive } from '@/lib/use-leads-live'
 
@@ -98,6 +99,11 @@ export default function LeadsPage() {
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('createdAt')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  // Phase C advanced filters — kept as one object (not persisted to the URL/
+  // sessionStorage like the core filters above, to keep this diff bounded;
+  // they reset on reload same as a fresh visit would).
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedLeadFilters>({})
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -130,6 +136,7 @@ export default function LeadsPage() {
       sortBy,
       sortDir,
       view,
+      advanced: advancedFilters,
     }),
     [
       stage,
@@ -144,6 +151,7 @@ export default function LeadsPage() {
       sortBy,
       sortDir,
       view,
+      advancedFilters,
     ]
   )
 
@@ -266,6 +274,9 @@ export default function LeadsPage() {
     if (fromDate) params.set('from', fromDate)
     if (toDate) params.set('to', toDate)
     if (search) params.set('search', search)
+    for (const [key, value] of Object.entries(advancedFilters)) {
+      if (value) params.set(key, value)
+    }
     return params
   }
 
@@ -506,6 +517,34 @@ export default function LeadsPage() {
           >
             Custom range
           </button>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className={cn(
+              'crm-chip',
+              showAdvanced || Object.values(advancedFilters).some(Boolean) ? 'crm-chip-active' : 'crm-chip-idle'
+            )}
+          >
+            More filters
+          </button>
+          <select
+            value={sortBy}
+            onChange={(e) => {
+              setPage(1)
+              setSortBy(e.target.value as SortBy)
+              setSortDir('desc')
+            }}
+            aria-label="Sort by"
+            className="crm-input h-8 w-auto"
+          >
+            <option value="createdAt">Newest</option>
+            <option value="lastActivityAt">Most recently active</option>
+            <option value="quotationValue">Highest quotation value</option>
+            <option value="orderValue">Highest order value</option>
+            <option value="supplierMargin">Highest margin</option>
+            <option value="totalCalls">Most calls</option>
+            <option value="totalMessages">Most messages</option>
+          </select>
         </div>
 
         <div className="relative min-w-[180px] flex-1">
@@ -620,6 +659,137 @@ export default function LeadsPage() {
             }}
             className="crm-input"
           />
+        </div>
+      )}
+
+      {showAdvanced && (
+        <div className="grid grid-cols-2 gap-2 rounded-md border border-border bg-muted/40 p-3 sm:grid-cols-4">
+          {(
+            [
+              ['quotationValueMin', 'Quotation value ≥'],
+              ['quotationValueMax', 'Quotation value ≤'],
+              ['orderValueMin', 'Order value ≥'],
+              ['orderValueMax', 'Order value ≤'],
+              ['marginMin', 'Margin % ≥'],
+              ['marginMax', 'Margin % ≤'],
+              ['callsCountMin', 'Calls ≥'],
+              ['messagesCountMin', 'Messages ≥'],
+              ['inactivityDays', 'Inactive for (days) ≥'],
+            ] as const
+          ).map(([key, label]) => (
+            <div key={key} className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground" htmlFor={`adv-${key}`}>
+                {label}
+              </label>
+              <input
+                id={`adv-${key}`}
+                type="number"
+                min={0}
+                value={advancedFilters[key] ?? ''}
+                onChange={(e) => {
+                  setPage(1)
+                  setAdvancedFilters((f) => ({ ...f, [key]: e.target.value || undefined }))
+                }}
+                className="crm-input h-8"
+              />
+            </div>
+          ))}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor="adv-quotationNumber">
+              Quotation number
+            </label>
+            <input
+              id="adv-quotationNumber"
+              value={advancedFilters.quotationNumber ?? ''}
+              onChange={(e) => {
+                setPage(1)
+                setAdvancedFilters((f) => ({ ...f, quotationNumber: e.target.value || undefined }))
+              }}
+              className="crm-input h-8"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor="adv-closingHorizon">
+              Closing horizon
+            </label>
+            <select
+              id="adv-closingHorizon"
+              value={advancedFilters.closingHorizon ?? ''}
+              onChange={(e) => {
+                setPage(1)
+                setAdvancedFilters((f) => ({ ...f, closingHorizon: e.target.value || undefined }))
+              }}
+              className="crm-input h-8"
+            >
+              <option value="">Any</option>
+              <option value="next_2_days">Next 2 days</option>
+              <option value="next_3_days">Next 3 days</option>
+              <option value="1_week">1 week</option>
+              <option value="1_month">1 month</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          {advancedFilters.closingHorizon === 'custom' && (
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground" htmlFor="adv-closingFrom">
+                  Closing from
+                </label>
+                <input
+                  id="adv-closingFrom"
+                  type="date"
+                  value={advancedFilters.closingFrom ?? ''}
+                  onChange={(e) => {
+                    setPage(1)
+                    setAdvancedFilters((f) => ({ ...f, closingFrom: e.target.value || undefined }))
+                  }}
+                  className="crm-input h-8"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground" htmlFor="adv-closingTo">
+                  Closing to
+                </label>
+                <input
+                  id="adv-closingTo"
+                  type="date"
+                  value={advancedFilters.closingTo ?? ''}
+                  onChange={(e) => {
+                    setPage(1)
+                    setAdvancedFilters((f) => ({ ...f, closingTo: e.target.value || undefined }))
+                  }}
+                  className="crm-input h-8"
+                />
+              </div>
+            </>
+          )}
+          {(
+            [
+              ['territory', 'Territory'],
+              ['serviceArea', 'Service area'],
+              ['pinCode', 'Pin code'],
+            ] as const
+          ).map(([key, label]) => (
+            <div key={key} className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground" htmlFor={`adv-${key}`}>
+                {label}
+              </label>
+              <input
+                id={`adv-${key}`}
+                value={advancedFilters[key] ?? ''}
+                onChange={(e) => {
+                  setPage(1)
+                  setAdvancedFilters((f) => ({ ...f, [key]: e.target.value || undefined }))
+                }}
+                className="crm-input h-8"
+              />
+            </div>
+          ))}
+          <div className="col-span-full">
+            <Button size="sm" variant="ghost" onClick={() => setAdvancedFilters({})}>
+              Clear advanced filters
+            </Button>
+          </div>
         </div>
       )}
 

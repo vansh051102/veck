@@ -31,6 +31,7 @@ export const CreateContactSchema = z.object({
   phone: z.string().regex(/^\+?[0-9\-\s()]+$/, 'Invalid phone number'),
   alternatePhone: z.string().regex(/^\+?[0-9\-\s()]+$/, 'Invalid phone number').optional(),
   designation: z.string().optional(),
+  gstNumber: z.string().optional(),
   source: z.enum([
     'Website',
     'LinkedIn',
@@ -65,6 +66,14 @@ export const LEAD_STAGES = [
 
 export const LEAD_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'] as const
 
+export const CLOSING_HORIZONS = [
+  'next_2_days',
+  'next_3_days',
+  '1_week',
+  '1_month',
+  'custom',
+] as const
+
 export const CreateLeadSchema = z.object({
   contactId: z.string().uuid('Invalid contact ID'),
   companyName: z.string().min(1, 'Company name is required'),
@@ -75,9 +84,18 @@ export const CreateLeadSchema = z.object({
   source: z.string().optional(),
   sourceDetails: z.record(z.any()).optional(),
   tags: z.array(z.string()).default([]),
+  closingHorizon: z.enum(CLOSING_HORIZONS).optional(),
+  targetClosingDate: z.coerce.date().optional(),
+  territory: z.string().optional(),
+  serviceArea: z.string().optional(),
+  pinCode: z.string().optional(),
 })
 
-export const UpdateLeadSchema = CreateLeadSchema.partial()
+export const UpdateLeadSchema = CreateLeadSchema.partial().extend({
+  // Optimistic lock: when provided, the update is rejected with a 409 if it
+  // no longer matches the server's Lead.version (someone else updated first).
+  version: z.number().int().optional(),
+})
 
 export const UpdateLeadStageSchema = z
   .object({
@@ -90,6 +108,7 @@ export const UpdateLeadStageSchema = z
     quotationNumber: z.string().optional(),
     productCategory: z.string().optional(),
     quotationValue: z.number().positive().optional(),
+    version: z.number().int().optional(),
   })
   .refine(
     (data) => {
@@ -125,6 +144,7 @@ export const UpdateLeadStageSchema = z
 
 export const AssignLeadSchema = z.object({
   assignedToId: z.string().uuid('Invalid user ID'),
+  version: z.number().int().optional(),
 })
 
 export type CreateLeadInput = z.infer<typeof CreateLeadSchema>
@@ -147,6 +167,19 @@ export const ACTIVITY_TYPES = [
 ] as const
 export const ACTIVITY_STATUSES = ['pending', 'completed', 'cancelled'] as const
 
+// Known keys dashboards/reports aggregate on (project specifics tracked per
+// enquiry/activity) — kept as named, typed fields so aggregation reads
+// structured data. `.catchall` still allows other free-form keys (e.g. the
+// existing `outcome`/`emailTo`/`attendees` used by lead-activities.tsx).
+export const ActivityMetadataSchema = z
+  .object({
+    projectType: z.string().optional(),
+    material: z.string().optional(),
+    quotationNumber: z.string().optional(),
+    deliveryArea: z.string().optional(),
+  })
+  .catchall(z.any())
+
 export const CreateActivitySchema = z.object({
   type: z.enum(ACTIVITY_TYPES),
   title: z.string().min(1, 'Title is required'),
@@ -155,7 +188,7 @@ export const CreateActivitySchema = z.object({
   scheduledFor: z.coerce.date().optional(),
   duration: z.number().positive().optional(),
   status: z.enum(ACTIVITY_STATUSES).default('pending'),
-  metadata: z.record(z.any()).optional(),
+  metadata: ActivityMetadataSchema.optional(),
 })
 
 export const UpdateActivitySchema = CreateActivitySchema.partial()

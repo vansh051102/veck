@@ -3,6 +3,7 @@ import { buildOwnershipFilterAsync } from '@/lib/rbac'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { isFlaggedDisqualify } from '@/lib/lead-stages'
+import { resolveMaskedFields, applyLeadFieldMask } from '@/lib/lead-serializer'
 
 // Averages the Qualified -> Quote Sent gap across the org from STAGE_CHANGE
 // audit entries (lib/auth.ts logAudit, written by the stage-change route).
@@ -193,6 +194,26 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     stats.activitiesThisWeek = activitiesThisWeek
     stats.dealAgingBuckets = dealAgingBuckets
+
+    const wonCount = (byStageMap['Order Confirmed'] ?? 0) + (byStageMap['Order Closed'] ?? 0)
+    const closedCount = wonCount + (byStageMap['Deal Lost'] ?? 0) + (byStageMap['Disqualified'] ?? 0)
+    stats.closeRate = closedCount > 0 ? Math.round((wonCount / closedCount) * 1000) / 10 : null
+
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const [callsToday, messagesToday, overdueFollowUps] = await prisma.$transaction([
+      prisma.activity.count({ where: { orgId, type: 'call', createdAt: { gte: todayStart }, ...activityOwnership } }),
+      prisma.activity.count({ where: { orgId, type: 'message', createdAt: { gte: todayStart }, ...activityOwnership } }),
+      prisma.activity.findMany({
+        where: { orgId, status: 'pending', scheduledFor: { lt: new Date() }, ...activityOwnership },
+        select: { id: true, leadId: true, title: true, scheduledFor: true, lead: { select: { companyName: true } } },
+        orderBy: { scheduledFor: 'asc' },
+        take: 20,
+      }),
+    ])
+    stats.callsToday = callsToday
+    stats.messagesToday = messagesToday
+    stats.overdueFollowUps = overdueFollowUps
   }
 
   if (role === 'purchase' || role === 'sales_purchase') {
@@ -220,8 +241,56 @@ export const GET = withErrorHandler(async (req: Request) => {
       orderBy: { stageChangedAt: 'desc' },
       take: 10,
     })
-    stats.recentQuoteSents = recentQuoteSents
+    const maskedFields = await resolveMaskedFields(orgId, userId, role)
+    stats.recentQuoteSents = maskedFields.length
+      ? recentQuoteSents.map((l) => applyLeadFieldMask(l, maskedFields))
+      : recentQuoteSents
     stats.flaggedDisqualifications = await computeFlaggedDisqualifications(orgId)
+
+    const [byClosingHorizon, highMarginLeads, regionalRevenueRows, importExportLogs] = await Promise.all([
+      prisma.lead.groupBy({
+        by: ['closingHorizon'],
+        where: { orgId, closingHorizon: { not: null } },
+        _count: { _all: true },
+      }),
+      prisma.lead.findMany({
+        where: { orgId, supplierMargin: { not: null } },
+        select: { id: true, companyName: true, supplierMargin: true, assignedTo: { select: { fullName: true } } },
+        orderBy: { supplierMargin: 'desc' },
+        take: 10,
+      }),
+      prisma.lead.groupBy({
+        by: ['territory'],
+        where: { orgId, territory: { not: null }, orderValue: { not: null } },
+        _sum: { orderValue: true },
+        _count: { _all: true },
+      }),
+      prisma.auditLog.findMany({
+        where: { orgId, action: { in: ['EXPORT', 'IMPORT'] } },
+        select: { id: true, action: true, resourceName: true, timestamp: true, user: { select: { fullName: true } } },
+        orderBy: { timestamp: 'desc' },
+        take: 20,
+      }),
+    ])
+
+    stats.pipelineByClosingHorizon = Object.fromEntries(
+      byClosingHorizon.map((r) => [r.closingHorizon as string, r._count._all])
+    )
+    stats.highMarginLeads = maskedFields.length
+      ? highMarginLeads.map((l) => applyLeadFieldMask(l, maskedFields))
+      : highMarginLeads
+    stats.regionalRevenue = regionalRevenueRows.map((r) => ({
+      territory: r.territory as string,
+      totalOrderValue: Number(r._sum.orderValue ?? 0),
+      leadCount: r._count._all,
+    }))
+    stats.recentImportExportActivity = importExportLogs.map((l) => ({
+      id: l.id,
+      action: l.action,
+      resourceName: l.resourceName,
+      userFullName: l.user.fullName,
+      timestamp: l.timestamp.toISOString(),
+    }))
   }
 
   return successResponse(stats)

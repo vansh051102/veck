@@ -18,8 +18,18 @@ interface Role {
   parentRoleId: string | null
   maxExportLimitDaily: number
   maskPiiData: boolean
+  maskedFields: string[]
   memberCount?: number
 }
+
+const MASKABLE_FIELDS = [
+  { value: 'phone', label: 'Phone' },
+  { value: 'email', label: 'Email' },
+  { value: 'gstNumber', label: 'GST number' },
+  { value: 'quotationValue', label: 'Quotation value' },
+  { value: 'orderValue', label: 'Order value' },
+  { value: 'supplierMargin', label: 'Margin %' },
+]
 
 function displayName(name: string) {
   return name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -86,6 +96,7 @@ export default function RolesHierarchyPage() {
         parentRoleId: editing.parentRoleId,
         maxExportLimitDaily: editing.maxExportLimitDaily,
         maskPiiData: editing.maskPiiData,
+        maskedFields: editing.maskedFields,
       })
       toast('Role updated')
       setEditing(null)
@@ -380,6 +391,30 @@ export default function RolesHierarchyPage() {
                 />
                 Mask phone/email/GST in exports
               </label>
+            </div>
+            <div className="mt-3 border-t border-border pt-3">
+              <p className="mb-1.5 text-sm font-medium">Field-level masking (list, detail &amp; export)</p>
+              <div className="flex flex-wrap gap-3">
+                {MASKABLE_FIELDS.map((f) => (
+                  <label key={f.value} className="flex items-center gap-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editing.maskedFields.includes(f.value)}
+                      disabled={editing.name === 'admin'}
+                      onChange={(e) =>
+                        setEditing({
+                          ...editing,
+                          maskedFields: e.target.checked
+                            ? [...editing.maskedFields, f.value]
+                            : editing.maskedFields.filter((v) => v !== f.value),
+                        })
+                      }
+                      className="h-4 w-4 cursor-pointer accent-primary disabled:opacity-60"
+                    />
+                    {f.label}
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
               <p className="text-xs text-muted-foreground">

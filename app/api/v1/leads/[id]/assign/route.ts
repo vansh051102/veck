@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { AssignLeadSchema } from '@/lib/validation'
+import { StaleVersionError } from '@/lib/errors'
 import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
 import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
 import { validateRequest } from '@/lib/middleware/validate-headers'
@@ -28,7 +29,12 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   if (!parsed.success) {
     throw new ValidationError('Invalid assignment request', parsed.error.flatten())
   }
-  const { assignedToId } = parsed.data
+  const { assignedToId, version: clientVersion } = parsed.data
+
+  // Optimistic lock: advisory read-then-write check (see leads/[id]/route.ts).
+  if (clientVersion !== undefined && clientVersion !== lead.version) {
+    throw new StaleVersionError(lead)
+  }
 
   const assignee = await prisma.user.findFirst({
     where: { id: assignedToId, orgId, status: 'active' },
@@ -40,7 +46,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
   const updated = await prisma.$transaction(async (tx) => {
     const result = await tx.lead.update({
       where: { id: lead.id },
-      data: { assignedToId, assignedAt: now },
+      data: { assignedToId, assignedAt: now, version: { increment: 1 } },
     })
 
     const timeline = await tx.timeline.upsert({

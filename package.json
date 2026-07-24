@@ -33,6 +33,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
+    "exceljs": "^4.4.0",
     "geist": "^1.7.2",
     "lodash-es": "^4.17.21",
     "lucide-react": "^0.294.0",

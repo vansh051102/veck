@@ -12,6 +12,11 @@ import { useDashboardRoleGuard } from '@/components/dashboard/use-dashboard-role
 import { RecentLeadsCard } from '@/components/dashboard/recent-leads-card'
 import { QuotationChangesCard } from '@/components/dashboard/quotation-changes-card'
 import { FlaggedDisqualificationsCard } from '@/components/dashboard/flagged-disqualifications-card'
+import { ClosingHorizonCard } from '@/components/dashboard/closing-horizon-card'
+import { HighMarginLeadsCard } from '@/components/dashboard/high-margin-leads-card'
+import { RegionalRevenueCard } from '@/components/dashboard/regional-revenue-card'
+import { ImportExportActivityCard } from '@/components/dashboard/import-export-activity-card'
+import { RepConversionCard } from '@/components/dashboard/rep-conversion-card'
 import { ViewAsBanner } from '@/components/ViewAsBanner'
 
 export default function AdminDashboardPage() {
@@ -81,6 +86,22 @@ function AdminDashboardPageContent() {
 
       {stats?.flaggedDisqualifications && stats.flaggedDisqualifications.length > 0 && (
         <FlaggedDisqualificationsCard rows={stats.flaggedDisqualifications} />
+      )}
+
+      {stats?.pipelineByClosingHorizon && <ClosingHorizonCard byHorizon={stats.pipelineByClosingHorizon} />}
+
+      {stats?.highMarginLeads && stats.highMarginLeads.length > 0 && (
+        <HighMarginLeadsCard leads={stats.highMarginLeads} />
+      )}
+
+      {stats?.regionalRevenue && stats.regionalRevenue.length > 0 && (
+        <RegionalRevenueCard rows={stats.regionalRevenue} />
+      )}
+
+      <RepConversionCard />
+
+      {stats?.recentImportExportActivity && stats.recentImportExportActivity.length > 0 && (
+        <ImportExportActivityCard rows={stats.recentImportExportActivity} />
       )}
     </div>
   )

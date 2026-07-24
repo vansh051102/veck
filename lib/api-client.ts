@@ -3,7 +3,7 @@
 import { supabaseBrowser } from './supabase-browser'
 
 export class ApiError extends Error {
-  constructor(public statusCode: number, message: string, public details?: unknown) {
+  constructor(public statusCode: number, message: string, public details?: unknown, public code?: string) {
     super(message)
     this.name = 'ApiError'
   }
@@ -33,7 +33,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
   const body = (await res.json()) as ApiEnvelope<T>
 
   if (!res.ok || !body.success) {
-    throw new ApiError(res.status, body.error?.message || 'Request failed', body.error?.details)
+    throw new ApiError(res.status, body.error?.message || 'Request failed', body.error?.details, body.error?.code)
   }
 
   return body
@@ -56,7 +56,7 @@ async function uploadRequest<T>(path: string, form: FormData): Promise<ApiEnvelo
 
   const body = (await res.json()) as ApiEnvelope<T>
   if (!res.ok || !body.success) {
-    throw new ApiError(res.status, body.error?.message || 'Request failed', body.error?.details)
+    throw new ApiError(res.status, body.error?.message || 'Request failed', body.error?.details, body.error?.code)
   }
   return body
 }

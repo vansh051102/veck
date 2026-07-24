@@ -15,6 +15,7 @@ import {
   isFlaggedDisqualify,
   SALES_HANDOVER_ROLES,
 } from '@/lib/lead-stages'
+import { StaleVersionError } from '@/lib/errors'
 import {
   successResponse,
   withErrorHandler,
@@ -58,9 +59,15 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     quotationNumber,
     productCategory,
     quotationValue,
+    version: clientVersion,
   } = parsed.data
   const toStage = normalizeStageName(rawToStage)
   const fromStage = normalizeStageName(lead.stage)
+
+  // Optimistic lock: advisory read-then-write check (see leads/[id]/route.ts).
+  if (clientVersion !== undefined && clientVersion !== lead.version) {
+    throw new StaleVersionError(lead)
+  }
 
   assertTransitionAllowed(lead, toStage, reason, ctx.role)
 
@@ -133,6 +140,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
     const result = await tx.lead.update({
       where: { id: lead.id },
       data: {
+        version: { increment: 1 },
         stage: toStage,
         stageChangedAt: now,
         stageChangedBy: ctx.userId,

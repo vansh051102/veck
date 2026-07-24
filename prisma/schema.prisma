@@ -16,76 +16,77 @@ datasource db {
 // ============================================================================
 
 model Organization {
-  id                 String   @id @default(uuid())
+  id                 String @id @default(uuid())
   name               String
-  slug               String   @unique
-  subscriptionPlan   String   @default("free") // free, pro, enterprise
+  slug               String @unique
+  subscriptionPlan   String @default("free") // free, pro, enterprise
   customFieldsConfig Json?
 
   // Company details (admin)
-  industry           String?
-  domain             String?
-  email              String?
-  phone              String?
-  gstin              String?
-  pan                String?
-  address            String?
-  country            String?  @default("India")
-  currency           String?  @default("INR")
-  moduleAccess       Json?    // per-module on/off toggles (admin_workspace migration)
+  industry     String?
+  domain       String?
+  email        String?
+  phone        String?
+  gstin        String?
+  pan          String?
+  address      String?
+  country      String? @default("India")
+  currency     String? @default("INR")
+  moduleAccess Json? // per-module on/off toggles (admin_workspace migration)
 
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users              User[]
-  roles              Role[]
-  auditLogs          AuditLog[]
-  settings           Settings?
-  leads              Lead[]
-  contacts           Contact[]
-  masters            Master[]
-  messageTemplates   MessageTemplate[]
-  slaClocks          SlaClock[]
-  slaRules           SlaRule[]
-  businessCalendars  BusinessCalendar[]
-  kpiSnapshots       KpiSnapshot[]
-  kraDefinitions     KraDefinition[]
-  timelines          Timeline[]
+  users             User[]
+  roles             Role[]
+  auditLogs         AuditLog[]
+  settings          Settings?
+  leads             Lead[]
+  contacts          Contact[]
+  masters           Master[]
+  messageTemplates  MessageTemplate[]
+  slaClocks         SlaClock[]
+  slaRules          SlaRule[]
+  businessCalendars BusinessCalendar[]
+  kpiSnapshots      KpiSnapshot[]
+  kraDefinitions    KraDefinition[]
+  timelines         Timeline[]
 
   @@index([slug])
 }
 
 model User {
-  id               String    @id @default(uuid())
-  orgId            String
-  org              Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  email            String    @unique
-  fullName         String
-  phone            String?
-  avatarUrl        String?
+  email        String  @unique
+  fullName     String
+  phone        String?
+  avatarUrl    String?
   // Role keys: admin, marketing_manager, marketing_executive, sales_manager,
   // sales_executive, purchase, sales_purchase (or custom Role.name)
-  role             String    @default("sales_executive")
-  status           String    @default("active") // active, inactive, suspended
-  isSuperAdmin     Boolean   @default(false) // platform super-admin (admin_workspace migration)
+  role         String  @default("sales_executive")
+  status       String  @default("active") // active, inactive, suspended
+  isSuperAdmin Boolean @default(false) // platform super-admin (admin_workspace migration)
 
-  department       String?
-  designation      String?
-  reportsToId      String?
-  reportsTo        User?     @relation("ReportsTo", fields: [reportsToId], references: [id])
-  directReports    User[]    @relation("ReportsTo")
-  territory        String?
-  branch           String?
-  defaultDashboard String?
+  department           String?
+  designation          String?
+  reportsToId          String?
+  reportsTo            User?    @relation("ReportsTo", fields: [reportsToId], references: [id])
+  directReports        User[]   @relation("ReportsTo")
+  territory            String?
+  branch               String?
+  defaultDashboard     String?
+  maskedFieldsOverride String[] @default([]) // empty = inherit Role.maskedFields; non-empty overrides it
 
-  lastLogin        DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  auditLogs        AuditLog[]
-  assignedLeads    Lead[]    @relation("assignedTo")
-  createdLeads     Lead[]    @relation("createdBy")
+  auditLogs     AuditLog[]
+  assignedLeads Lead[]     @relation("assignedTo")
+  createdLeads  Lead[]     @relation("createdBy")
 
   @@unique([orgId, email])
   @@index([orgId])
@@ -95,21 +96,22 @@ model User {
 }
 
 model Role {
-  id             String   @id @default(uuid())
-  orgId          String
-  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  name           String
-  permissions    Json
-  description    String?
-  department     String?
-  hierarchyLevel Int      @default(0)
-  parentRoleId   String?
-  maxExportLimitDaily Int     @default(100)
-  maskPiiData         Boolean @default(true)
+  name                String
+  permissions         Json
+  description         String?
+  department          String?
+  hierarchyLevel      Int      @default(0)
+  parentRoleId        String?
+  maxExportLimitDaily Int      @default(100)
+  maskPiiData         Boolean  @default(true)
+  maskedFields        String[] @default([])
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -117,12 +119,12 @@ model Role {
 }
 
 model AuditLog {
-  id           String   @id @default(uuid())
-  orgId        String
-  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  userId       String
-  user         User     @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
   action       String
   resourceType String
@@ -140,53 +142,53 @@ model AuditLog {
 }
 
 model Settings {
-  id                        String   @id @default(uuid())
-  orgId                     String   @unique
-  org                       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String       @unique
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // ponytail: defaultCalendarId nullable — SLA math falls back to naive wall-clock when unset
-  defaultCalendarId         String?
+  defaultCalendarId String?
 
-  currency                  String   @default("INR")
-  dateFormat                String   @default("DD/MM/YYYY")
-  timezone                  String   @default("Asia/Kolkata")
+  currency   String @default("INR")
+  dateFormat String @default("DD/MM/YYYY")
+  timezone   String @default("Asia/Kolkata")
 
   // { stages: [{ key, name, color, order, terminal, behavior, modal, slaHours? }] }
-  workflowStages            Json
-  autoAssignmentEnabled     Boolean  @default(false)
-  autoAssignmentRule        Json?
+  workflowStages        Json
+  autoAssignmentEnabled Boolean @default(false)
+  autoAssignmentRule    Json?
 
   // { leads: true, contacts: true, quotations: true, ... }
-  moduleAccess              Json?
+  moduleAccess  Json?
   // Ordered role ids for hierarchy canvas: [{ roleId, parentRoleId? }]
-  roleHierarchy             Json?
+  roleHierarchy Json?
 
   webhookUrl                String?
   webhookSecret             String?
-  emailNotificationsEnabled Boolean  @default(true)
+  emailNotificationsEnabled Boolean @default(true)
 
   // Lead-source integrations — set from the Integrations tab, no env vars
   // needed. `*ConfiguredBy` is the admin user who saved the key; new leads
   // from that source are attributed to them automatically.
-  indiamartWebhookSecret    String?  @unique
-  indiamartConfiguredBy     String?
+  indiamartWebhookSecret String? @unique
+  indiamartConfiguredBy  String?
 
-  tradeindiaWebhookSecret   String?  @unique
-  tradeindiaConfiguredBy    String?
+  tradeindiaWebhookSecret String? @unique
+  tradeindiaConfiguredBy  String?
 
-  whatsappVerifyToken       String?
-  whatsappAppSecret         String?
-  whatsappPhoneNumberId     String?  @unique
-  whatsappConfiguredBy      String?
+  whatsappVerifyToken   String?
+  whatsappAppSecret     String?
+  whatsappPhoneNumberId String? @unique
+  whatsappConfiguredBy  String?
 
-  emailInboundSecret        String?  @unique
-  emailConfiguredBy         String?
+  emailInboundSecret String? @unique
+  emailConfiguredBy  String?
 
-  justdialApiKey            String?
-  justdialConfiguredBy      String?
+  justdialApiKey       String?
+  justdialConfiguredBy String?
 
-  updatedAt                 DateTime @updatedAt
-  updatedBy                 String
+  updatedAt DateTime @updatedAt
+  updatedBy String
 }
 
 model OrgSequence {
@@ -200,19 +202,19 @@ model OrgSequence {
 }
 
 model Master {
-  id           String   @id @default(uuid())
-  orgId        String
-  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   type         String
   key          String
   value        String
   description  String?
-  displayOrder Int      @default(0)
-  isActive     Boolean  @default(true)
+  displayOrder Int     @default(0)
+  isActive     Boolean @default(true)
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([orgId, type, key])
   @@index([orgId, type])
@@ -223,9 +225,9 @@ model Master {
 // ============================================================================
 
 model Contact {
-  id             String   @id @default(uuid())
-  orgId          String
-  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   firstName      String
   lastName       String
@@ -236,84 +238,103 @@ model Contact {
   gstNumber      String?
   city           String?
 
-  source         String
-  sourceDetails  Json?
-  tags           String[] @default([])
-  customFields   Json?
+  source        String
+  sourceDetails Json?
+  tags          String[] @default([])
+  customFields  Json?
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  createdById    String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String
+  deletedAt   DateTime?
 
-  leads          Lead[]
+  leads Lead[]
 
   @@unique([orgId, email])
   @@unique([orgId, phone])
   @@index([orgId])
   @@index([source])
+  @@index([deletedAt])
 }
 
 model Lead {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  contactId         String
-  contact           Contact   @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  companyName       String
+  contactId   String
+  contact     Contact @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  companyName String
 
-  stage             String    @default("New Lead")
-  stageChangedAt    DateTime  @default(now())
-  stageChangedBy    String?
-  contactOutcome    String?
+  stage          String   @default("New Lead")
+  stageChangedAt DateTime @default(now())
+  stageChangedBy String?
+  contactOutcome String?
 
-  priority          String    @default("Medium")
-  status            String    @default("open")
-  dealLostReason    String?
-  dealLostDetails   String?
-  dealLostDate      DateTime?
+  priority        String    @default("Medium")
+  status          String    @default("open")
+  dealLostReason  String?
+  dealLostDetails String?
+  dealLostDate    DateTime?
 
-  requirement       String?
+  requirement String?
 
-  supplierMargin    Decimal?  @db.Decimal(5, 2)
-  quotationNumber   String?
-  productCategory   String?
-  quotationValue    Decimal?  @db.Decimal(12, 2)
+  supplierMargin  Decimal? @db.Decimal(5, 2)
+  quotationNumber String?
+  productCategory String?
+  quotationValue  Decimal? @db.Decimal(12, 2)
+  orderValue      Decimal? @db.Decimal(12, 2)
 
-  assignedToId      String?
-  assignedTo        User?     @relation("assignedTo", fields: [assignedToId], references: [id])
-  assignedAt        DateTime?
+  dealWonReason  String?
+  dealWonDetails String?
 
-  source            String?
-  sourceDetails     Json?
-  externalId        String?   @unique
-  notes             String?
-  customFields      Json?
-  tags              String[]  @default([])
+  targetClosingDate DateTime?
+  closingHorizon    String?
 
-  qualifiedAt       DateTime? // set when lead enters Qualified stage (0_init column)
-  quoteSentAt       DateTime? // set when lead enters Quote Sent stage (0_init column)
+  territory   String?
+  serviceArea String?
+  pinCode     String?
 
-  slaCreatedAt      DateTime  @default(now())
-  slaDeadline       DateTime
-  slaBreached       Boolean   @default(false)
-  firstResponseAt   DateTime?
+  totalCalls    Int @default(0)
+  totalMessages Int @default(0)
 
-  viewCount         Int       @default(0)
-  lastViewedAt      DateTime?
-  lastActivityAt    DateTime  @default(now())
+  version   Int       @default(1)
+  deletedAt DateTime?
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  createdById       String
-  createdBy         User      @relation("createdBy", fields: [createdById], references: [id])
+  assignedToId String?
+  assignedTo   User?     @relation("assignedTo", fields: [assignedToId], references: [id])
+  assignedAt   DateTime?
 
-  checklists        Checklist[]
-  timeline          Timeline?
-  activities        Activity[]
-  quotes            Quote[]
-  purchaseRequests  PurchaseRequest[]
-  documents         LeadDocument[]
+  source        String?
+  sourceDetails Json?
+  externalId    String?  @unique
+  notes         String?
+  customFields  Json?
+  tags          String[] @default([])
+
+  qualifiedAt DateTime? // set when lead enters Qualified stage (0_init column)
+  quoteSentAt DateTime? // set when lead enters Quote Sent stage (0_init column)
+
+  slaCreatedAt    DateTime  @default(now())
+  slaDeadline     DateTime
+  slaBreached     Boolean   @default(false)
+  firstResponseAt DateTime?
+
+  viewCount      Int       @default(0)
+  lastViewedAt   DateTime?
+  lastActivityAt DateTime  @default(now())
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
+  createdBy   User     @relation("createdBy", fields: [createdById], references: [id])
+
+  checklists       Checklist[]
+  timeline         Timeline?
+  activities       Activity[]
+  quotes           Quote[]
+  purchaseRequests PurchaseRequest[]
+  documents        LeadDocument[]
 
   @@index([orgId])
   @@index([stage])
@@ -322,12 +343,13 @@ model Lead {
   @@index([slaDeadline])
   @@index([createdAt])
   @@index([createdById])
+  @@index([deletedAt])
 }
 
 model Checklist {
-  id          String          @id @default(uuid())
-  leadId      String
-  lead        Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   title       String
   description String?
@@ -337,8 +359,8 @@ model Checklist {
   completedAt DateTime?
   completedBy String?
 
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
 }
@@ -353,61 +375,61 @@ model ChecklistItem {
   completedAt DateTime?
   completedBy String?
 
-  createdAt   DateTime  @default(now())
+  createdAt DateTime @default(now())
 }
 
 model Timeline {
-  id        String          @id @default(uuid())
-  orgId     String
-  org       Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  leadId    String          @unique
-  lead      Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  events    TimelineEvent[]
+  id     String          @id @default(uuid())
+  orgId  String
+  org    Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  leadId String          @unique
+  lead   Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  events TimelineEvent[]
 
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
   @@index([orgId])
 }
 
 model TimelineEvent {
-  id          String   @id @default(uuid())
-  timelineId  String
-  timeline    Timeline @relation(fields: [timelineId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  timelineId String
+  timeline   Timeline @relation(fields: [timelineId], references: [id], onDelete: Cascade)
 
   type        String
   title       String
   description String?
   metadata    Json?
 
-  createdBy   String
-  createdAt   DateTime @default(now())
+  createdBy String
+  createdAt DateTime @default(now())
 
   @@index([timelineId])
   @@index([type])
 }
 
 model Activity {
-  id           String    @id @default(uuid())
-  orgId        String
-  leadId       String
-  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  orgId  String
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  type         String
-  title        String
-  description  String?
+  type        String
+  title       String
+  description String?
 
   scheduledFor DateTime?
   duration     Int?
 
-  status       String    @default("pending")
-  completedAt  DateTime?
-  metadata     Json?
+  status      String    @default("pending")
+  completedAt DateTime?
+  metadata    Json?
 
-  createdBy    String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
   @@index([type])
@@ -415,15 +437,15 @@ model Activity {
 }
 
 model Quote {
-  id          String    @id @default(uuid())
-  orgId       String
-  leadId      String
-  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  id     String @id @default(uuid())
+  orgId  String
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Restrict)
 
   quoteNumber String    @unique
   items       Json
   totalAmount Decimal   @db.Decimal(12, 2)
-  discount    Decimal   @db.Decimal(12, 2) @default(0)
+  discount    Decimal   @default(0) @db.Decimal(12, 2)
   finalAmount Decimal   @db.Decimal(12, 2)
   validUntil  DateTime
   status      String    @default("draft")
@@ -432,69 +454,71 @@ model Quote {
   terms       String?
   notes       String?
 
-  createdBy   String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([leadId])
   @@index([status])
+  @@index([deletedAt])
 }
 
 model PurchaseRequest {
-  id               String    @id @default(uuid())
-  orgId            String
-  leadId           String
-  lead             Lead      @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  id     String @id @default(uuid())
+  orgId  String
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Restrict)
 
-  prNumber         String    @unique
-  productIds       String[]
+  prNumber          String    @unique
+  productIds        String[]
   estimatedQuantity Int
-  estimatedAmount  Decimal   @db.Decimal(12, 2)
-  status           String    @default("pending")
-  sentToSupplierAt DateTime?
-  notes            String?
+  estimatedAmount   Decimal   @db.Decimal(12, 2)
+  status            String    @default("pending")
+  sentToSupplierAt  DateTime?
+  notes             String?
 
-  createdBy        String
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([leadId])
   @@index([status])
 }
 
 model LeadDocument {
-  id          String   @id @default(uuid())
-  orgId       String
-  leadId      String
-  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  orgId  String
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   name        String
   storagePath String
   mimeType    String?
-  sizeBytes   Int      @default(0)
+  sizeBytes   Int     @default(0)
 
-  uploadedBy  String
-  createdAt   DateTime @default(now())
+  uploadedBy String
+  createdAt  DateTime @default(now())
 
   @@index([leadId])
   @@index([orgId])
 }
 
 model AssignmentRule {
-  id              String   @id @default(uuid())
-  orgId           String
+  id    String @id @default(uuid())
+  orgId String
 
   source          String
   weekday         Int?
   productCategory String?
   assignedToId    String
 
-  isActive        Boolean  @default(true)
-  priority        Int      @default(0)
+  isActive Boolean @default(true)
+  priority Int     @default(0)
 
-  createdBy       String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([orgId, isActive])
 }
@@ -504,19 +528,19 @@ model AssignmentRule {
 // ============================================================================
 
 model MessageTemplate {
-  id          String   @id @default(uuid())
-  orgId       String
-  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  name        String
-  channel     String   @default("whatsapp") // whatsapp, email, sms
-  body        String
-  stageKey    String?  // optional mapping to workflow stage key
-  isActive    Boolean  @default(true)
+  name     String
+  channel  String  @default("whatsapp") // whatsapp, email, sms
+  body     String
+  stageKey String? // optional mapping to workflow stage key
+  isActive Boolean @default(true)
 
-  createdBy   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([orgId])
   @@index([stageKey])
@@ -529,37 +553,37 @@ model MessageTemplate {
 // ============================================================================
 
 model SlaClock {
-  id            String    @id @default(uuid())
-  orgId         String
-  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  entityType    String    // "Lead" today; future entities without schema change
-  entityId      String
-  ruleId        String?
-  rule          SlaRule?  @relation(fields: [ruleId], references: [id])
+  entityType String // "Lead" today; future entities without schema change
+  entityId   String
+  ruleId     String?
+  rule       SlaRule? @relation(fields: [ruleId], references: [id])
 
-  stage         String
-  trigger       String    // "stage_entered" | "quote_sent" | ...
+  stage   String
+  trigger String // "stage_entered" | "quote_sent" | ...
 
   startedAt     DateTime  @default(now())
   pausedAt      DateTime?
   pausedMinutes Int       @default(0)
   endedAt       DateTime?
 
-  targetMinutes Int?      // null = data-collection-only, no breach possible
-  deadline      DateTime? // cached at start time, business-clock-adjusted
+  targetMinutes          Int? // null = data-collection-only, no breach possible
+  deadline               DateTime? // cached at start time, business-clock-adjusted
   elapsedBusinessMinutes Int?
 
-  status        String    @default("pending")
+  status String @default("pending")
   // pending | completed | overdue | paused | escalated | breached | cancelled
 
-  warnedAt      DateTime?
-  escalatedAt   DateTime?
-  escalatedToId String?
-  notificationSentAt DateTime?  // tracks when email notification was sent
+  warnedAt           DateTime?
+  escalatedAt        DateTime?
+  escalatedToId      String?
+  notificationSentAt DateTime? // tracks when email notification was sent
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([orgId, entityType, entityId])
   @@index([orgId, status])
@@ -567,87 +591,87 @@ model SlaClock {
 }
 
 model SlaRule {
-  id                String   @id @default(uuid())
-  orgId             String
-  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  entityType        String   // "Lead"
-  department        String?  // null = applies to all departments
-  stage             String
-  trigger           String
+  entityType String // "Lead"
+  department String? // null = applies to all departments
+  stage      String
+  trigger    String
 
-  targetMinutes     Int?     // null = data-collection-only, no breach possible
-  warningPct        Int      @default(80)
-  calendarId        String?
-  calendar          BusinessCalendar? @relation(fields: [calendarId], references: [id])
+  targetMinutes Int? // null = data-collection-only, no breach possible
+  warningPct    Int               @default(80)
+  calendarId    String?
+  calendar      BusinessCalendar? @relation(fields: [calendarId], references: [id])
 
-  escalateToRoleId  String?
-  notifyOnWarning   Boolean  @default(true)
-  notifyOnBreach    Boolean  @default(true)
+  escalateToRoleId String?
+  notifyOnWarning  Boolean @default(true)
+  notifyOnBreach   Boolean @default(true)
 
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  updatedBy         String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updatedBy String
 
-  clocks            SlaClock[]
+  clocks SlaClock[]
 
   @@unique([orgId, entityType, department, stage, trigger])
 }
 
 model BusinessCalendar {
-  id            String   @id @default(uuid())
-  orgId         String
-  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  branch        String?  // null = org default calendar
+  id     String       @id @default(uuid())
+  orgId  String
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch String? // null = org default calendar
 
-  timezone      String   @default("Asia/Kolkata")
-  workingHours  Json     // { mon: {start:"09:30", end:"18:30"}, ..., sun: null }
-  holidays      String[] @default([])   // ["2026-08-15", ...]
-  halfDays      Json?                    // { "2026-12-24": {start:"09:30", end:"14:00"} }
+  timezone     String   @default("Asia/Kolkata")
+  workingHours Json // { mon: {start:"09:30", end:"18:30"}, ..., sun: null }
+  holidays     String[] @default([]) // ["2026-08-15", ...]
+  halfDays     Json? // { "2026-12-24": {start:"09:30", end:"14:00"} }
 
-  isDefault     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  rules         SlaRule[]
+  rules SlaRule[]
 
   @@unique([orgId, branch])
 }
 
 model KpiSnapshot {
-  id           String   @id @default(uuid())
-  orgId        String
-  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  scopeType    String   // "user" | "department" | "branch" | "org"
-  scopeId      String
-  metric       String   // fixed catalog, see lib/kpi/metrics.ts
-  bucket       String   // "2026-07-14" | "2026-W28" | "2026-07"
-  bucketType   String   // "day" | "week" | "month"
+  scopeType  String // "user" | "department" | "branch" | "org"
+  scopeId    String
+  metric     String // fixed catalog, see lib/kpi/metrics.ts
+  bucket     String // "2026-07-14" | "2026-W28" | "2026-07"
+  bucketType String // "day" | "week" | "month"
 
-  value        Decimal  @db.Decimal(14, 2)
-  computedAt   DateTime @default(now())
+  value      Decimal  @db.Decimal(14, 2)
+  computedAt DateTime @default(now())
 
   @@unique([orgId, scopeType, scopeId, metric, bucket, bucketType])
   @@index([orgId, metric, bucket])
 }
 
 model KraDefinition {
-  id           String   @id @default(uuid())
-  orgId        String
-  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  department   String?  // null = applies org-wide
-  roleId       String?  // optional narrower scope than department
-  metric       String   // must match KpiSnapshot.metric catalog
-  label        String   // display name for dashboards, e.g. "Lead Quality"
-  weight       Int?     // optional relative importance, for future scorecards
+  department String? // null = applies org-wide
+  roleId     String? // optional narrower scope than department
+  metric     String // must match KpiSnapshot.metric catalog
+  label      String // display name for dashboards, e.g. "Lead Quality"
+  weight     Int? // optional relative importance, for future scorecards
 
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  updatedBy    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updatedBy String
 
   @@index([orgId, department])
 }
@@ -686,18 +710,18 @@ model RateLimit {
 }
 
 model Notification {
-  id           String   @id @default(uuid())
-  orgId        String
-  userId       String
-  slaClockId   String?
-  leadId       String?
-  type         String   // "sla_breach" | "sla_warning" | "sla_escalation"
-  title        String
-  body         String
-  read         Boolean  @default(false)
-  readAt       DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id         String    @id @default(uuid())
+  orgId      String
+  userId     String
+  slaClockId String?
+  leadId     String?
+  type       String // "sla_breach" | "sla_warning" | "sla_escalation"
+  title      String
+  body       String
+  read       Boolean   @default(false)
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([orgId, userId, read])
   @@index([slaClockId])

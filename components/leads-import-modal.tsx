@@ -41,9 +41,17 @@ const HEADER_MAP: Record<string, string> = {
 
 interface ImportResult {
   created: number
+  updated: number
   failed: number
   errors: { row: number; message: string }[]
+  errorCsv: string | null
 }
+
+const DUPLICATE_STRATEGIES = [
+  { value: 'skip', label: 'Skip duplicates' },
+  { value: 'overwrite', label: 'Overwrite existing lead' },
+  { value: 'repeat_enquiry', label: 'Log as repeat enquiry' },
+] as const
 
 export function LeadsImportModal({
   onClose,
@@ -54,22 +62,22 @@ export function LeadsImportModal({
 }) {
   const { toast } = useToast()
   const [rows, setRows] = useState<Record<string, string>[]>([])
+  const [unmappedColumns, setUnmappedColumns] = useState<string[]>([])
   const [fileName, setFileName] = useState('')
+  const [duplicateStrategy, setDuplicateStrategy] = useState<(typeof DUPLICATE_STRATEGIES)[number]['value']>('skip')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [importing, setImporting] = useState(false)
 
-  async function handleFile(file: File) {
-    setError(null)
-    setResult(null)
-    setFileName(file.name)
-    const text = await file.text()
-    const parsed = parseCsvWithHeader(text)
+  function applyMapping(parsed: Record<string, string>[]) {
     if (parsed.length === 0) {
       setError('No data rows found. The first line must be a header row.')
       setRows([])
+      setUnmappedColumns([])
       return
     }
+    const columns = Object.keys(parsed[0] ?? {})
+    setUnmappedColumns(columns.filter((c) => !HEADER_MAP[c]))
     const mapped = parsed.map((raw) => {
       const row: Record<string, string> = {}
       for (const [key, value] of Object.entries(raw)) {
@@ -81,11 +89,48 @@ export function LeadsImportModal({
     setRows(mapped)
   }
 
+  async function handleFile(file: File) {
+    setError(null)
+    setResult(null)
+    setFileName(file.name)
+
+    if (file.name.toLowerCase().endsWith('.xlsx')) {
+      const ExcelJS = (await import('exceljs')).default
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(await file.arrayBuffer())
+      const sheet = workbook.worksheets[0]
+      if (!sheet) {
+        setError('No sheet found in the workbook.')
+        return
+      }
+      const values: string[][] = []
+      sheet.eachRow((row) => {
+        const cells: string[] = []
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          cells.push(cell.value == null ? '' : String(cell.value))
+        })
+        values.push(cells)
+      })
+      const [headerRow, ...dataRows] = values
+      if (!headerRow) {
+        setError('No data rows found. The first row must be a header row.')
+        return
+      }
+      const headers = headerRow.map((h) => h.trim().toLowerCase())
+      const parsed = dataRows.map((r) => Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? '').trim()])))
+      applyMapping(parsed)
+      return
+    }
+
+    const text = await file.text()
+    applyMapping(parseCsvWithHeader(text))
+  }
+
   async function handleImport() {
     setImporting(true)
     setError(null)
     try {
-      const res = await api.post<ImportResult>('/leads/import', { rows })
+      const res = await api.post<ImportResult>('/leads/import', { rows, duplicateStrategy })
       setResult(res.data ?? null)
       if (res.data && res.data.failed === 0) {
         toast(`${res.data.created} lead(s) imported`)
@@ -101,6 +146,17 @@ export function LeadsImportModal({
     }
   }
 
+  function downloadErrorCsv() {
+    if (!result?.errorCsv) return
+    const blob = new Blob([result.errorCsv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'import-errors.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <Modal title="Import leads from CSV" onClose={onClose}>
       <div className="flex flex-col gap-4">
@@ -114,22 +170,46 @@ export function LeadsImportModal({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="csv-file" className="text-sm font-medium">
-            CSV file
+            CSV or Excel file
           </label>
           <input
             id="csv-file"
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.xlsx"
             onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
             className="text-sm"
           />
         </div>
 
         {rows.length > 0 && !result && (
-          <p className="text-sm">
-            <span className="font-medium">{rows.length}</span> row(s) parsed from{' '}
-            <span className="font-medium">{fileName}</span>.
-          </p>
+          <>
+            <p className="text-sm">
+              <span className="font-medium">{rows.length}</span> row(s) parsed from{' '}
+              <span className="font-medium">{fileName}</span>.
+            </p>
+            {unmappedColumns.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Columns not recognized and skipped: {unmappedColumns.join(', ')}
+              </p>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="dup-strategy" className="text-sm font-medium">
+                If a contact already exists
+              </label>
+              <select
+                id="dup-strategy"
+                value={duplicateStrategy}
+                onChange={(e) => setDuplicateStrategy(e.target.value as typeof duplicateStrategy)}
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+              >
+                {DUPLICATE_STRATEGIES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
 
         {error && <p className="text-sm text-destructive">{error}</p>}
@@ -137,7 +217,8 @@ export function LeadsImportModal({
         {result && (
           <div className="rounded-md border border-border p-3 text-sm">
             <p>
-              Imported <span className="font-medium">{result.created}</span>, failed{' '}
+              Imported <span className="font-medium">{result.created}</span>
+              {result.updated > 0 && <>, updated <span className="font-medium">{result.updated}</span></>}, failed{' '}
               <span className="font-medium">{result.failed}</span>.
             </p>
             {result.errors.slice(0, 10).map((e) => (
@@ -145,6 +226,15 @@ export function LeadsImportModal({
                 Row {e.row}: {e.message}
               </p>
             ))}
+            {result.errorCsv && (
+              <button
+                type="button"
+                onClick={downloadErrorCsv}
+                className="mt-2 text-xs font-medium text-primary underline-offset-2 hover:underline"
+              >
+                Download failed rows as CSV
+              </button>
+            )}
           </div>
         )}
 

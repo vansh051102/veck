@@ -73,6 +73,8 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
         lastActivityAt: now,
         firstResponseAt: lead.firstResponseAt ?? now,
         ...(contactOutcome && { contactOutcome }),
+        ...(input.type === 'call' && { totalCalls: { increment: 1 } }),
+        ...(input.type === 'message' && { totalMessages: { increment: 1 } }),
       },
     })
 

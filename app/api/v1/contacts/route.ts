@@ -3,12 +3,12 @@ import { logAudit } from '@/lib/audit'
 import { CreateContactSchema } from '@/lib/validation'
 import { PERMISSIONS } from '@/lib/rbac'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
+import { checkContactDuplicate } from '@/lib/contact-duplicate-check'
 import {
   successResponse,
   paginatedResponse,
   withErrorHandler,
   ValidationError,
-  ConflictError,
   getPaginationParams,
 } from '@/lib/api-response'
 import { Prisma } from '@prisma/client'
@@ -28,6 +28,16 @@ export const POST = withErrorHandler(async (req) => {
   }
   const input = parsed.data
 
+  // Advisory pre-check: builds a rich 409 (existing lead + agent + actions)
+  // instead of the DB's generic unique-constraint error. Race-safe fallback
+  // below re-runs this same check if a concurrent submit slips past it.
+  const preCheckDuplicate = await checkContactDuplicate(
+    orgId,
+    { phone: input.phone, email: input.email, gstNumber: input.gstNumber },
+    { userId: ctx.userId, role: ctx.role }
+  )
+  if (preCheckDuplicate) throw preCheckDuplicate
+
   let contact
   try {
     contact = await prisma.contact.create({
@@ -39,6 +49,7 @@ export const POST = withErrorHandler(async (req) => {
         phone: normalizePhone(input.phone),
         alternatePhone: input.alternatePhone,
         designation: input.designation,
+        gstNumber: input.gstNumber,
         source: input.source,
         sourceDetails: input.sourceDetails,
         tags: input.tags,
@@ -46,9 +57,16 @@ export const POST = withErrorHandler(async (req) => {
       },
     })
   } catch (err) {
-    // @@unique([orgId, email]) / @@unique([orgId, phone]) — surface a clean 409
+    // @@unique([orgId, email]) / @@unique([orgId, phone]) — the pre-check above
+    // is advisory, not a lock, so a concurrent submit can still land here.
+    // Re-run the same lookup to surface the same rich duplicate response.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      throw new ConflictError('A contact with this email or phone already exists')
+      const raceDuplicate = await checkContactDuplicate(
+        orgId,
+        { phone: input.phone, email: input.email, gstNumber: input.gstNumber },
+        { userId: ctx.userId, role: ctx.role }
+      )
+      throw raceDuplicate ?? err
     }
     throw err
   }

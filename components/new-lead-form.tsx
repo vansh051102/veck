@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { api } from '@/lib/api-client'
+import { api, ApiError } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { Button } from '@/components/ui/button'
-import { LEAD_PRIORITIES } from '@/lib/validation'
+import { LEAD_PRIORITIES, CLOSING_HORIZONS } from '@/lib/validation'
+import { useCurrentUser } from '@/lib/use-current-user'
 
 interface ContactOption {
   id: string
@@ -14,7 +15,23 @@ interface ContactOption {
   phone: string
 }
 
+interface DuplicateContactDetails {
+  reason: 'phone' | 'email' | 'gst' | 'open_lead'
+  existingContact: { id: string; firstName: string; lastName: string }
+  existingLead: { id: string; companyName: string; stage: string; assignedTo: { fullName: string } | null } | null
+  actions: Array<'view' | 'logAsRepeat' | 'reassign'>
+}
+
+const CLOSING_HORIZON_LABELS: Record<(typeof CLOSING_HORIZONS)[number], string> = {
+  next_2_days: 'Next 2 days',
+  next_3_days: 'Next 3 days',
+  '1_week': '1 week',
+  '1_month': '1 month',
+  custom: 'Custom date',
+}
+
 export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void }) {
+  const currentUser = useCurrentUser()
   const [mode, setMode] = useState<'existing' | 'new'>('new')
 
   // Existing-contact search
@@ -27,11 +44,17 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [gstNumber, setGstNumber] = useState('')
 
   // Lead fields
   const [companyName, setCompanyName] = useState('')
   const [priority, setPriority] = useState<(typeof LEAD_PRIORITIES)[number]>('Medium')
   const [notes, setNotes] = useState('')
+  const [closingHorizon, setClosingHorizon] = useState<(typeof CLOSING_HORIZONS)[number] | ''>('')
+  const [targetClosingDate, setTargetClosingDate] = useState('')
+  const [territory, setTerritory] = useState('')
+  const [serviceArea, setServiceArea] = useState('')
+  const [pinCode, setPinCode] = useState('')
 
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -40,6 +63,12 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
   // Duplicate contact detection: runs when phone or email changes in new-contact mode
   const [dupMatches, setDupMatches] = useState<ContactOption[]>([])
   const [ignoreDup, setIgnoreDup] = useState(false)
+
+  // Server-side duplicate conflict (409 DUPLICATE_CONTACT) — surfaced with
+  // existing lead detail + view/log-as-repeat/reassign actions, instead of a
+  // raw error, per the diagnostic-banner spec.
+  const [conflict, setConflict] = useState<DuplicateContactDetails | null>(null)
+  const [reassigning, setReassigning] = useState(false)
 
   useEffect(() => {
     if (mode !== 'existing' || contactSearch.trim().length < 2) {
@@ -81,10 +110,40 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
     return () => { cancelled = true; clearTimeout(debounce) }
   }, [mode, phone, email])
 
+  async function createLead(contactId: string, opts: { repeatOfLeadId?: string } = {}) {
+    setSubmitting(true)
+    try {
+      const leadRes = await api.post<{ id: string }>('/leads', {
+        contactId,
+        companyName,
+        priority,
+        notes: notes || undefined,
+        closingHorizon: closingHorizon || undefined,
+        targetClosingDate: closingHorizon && targetClosingDate ? targetClosingDate : undefined,
+        territory: territory || undefined,
+        serviceArea: serviceArea || undefined,
+        pinCode: pinCode || undefined,
+        ...(opts.repeatOfLeadId && { sourceDetails: { repeatOf: opts.repeatOfLeadId } }),
+      })
+      onCreated(leadRes.data!.id)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'DUPLICATE_CONTACT') {
+        setConflict(err.details as DuplicateContactDetails)
+        return
+      }
+      const parsed = toFormErrors(err, 'Failed to create lead')
+      setError(parsed.message)
+      setFieldErrors(parsed.fields)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setFieldErrors({})
+    setConflict(null)
 
     if (!companyName.trim()) {
       setError('Company name is required')
@@ -99,34 +158,56 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
       return
     }
 
+    if (mode === 'existing') {
+      await createLead(selectedContactId)
+      return
+    }
+
     setSubmitting(true)
     try {
-      let contactId = selectedContactId
-
-      if (mode === 'new') {
-        const contactRes = await api.post<{ id: string }>('/contacts', {
-          firstName,
-          lastName,
-          email,
-          phone,
-        })
-        contactId = contactRes.data!.id
-      }
-
-      const leadRes = await api.post<{ id: string }>('/leads', {
-        contactId,
-        companyName,
-        priority,
-        notes: notes || undefined,
+      const contactRes = await api.post<{ id: string }>('/contacts', {
+        firstName,
+        lastName,
+        email,
+        phone,
+        gstNumber: gstNumber || undefined,
       })
-
-      onCreated(leadRes.data!.id)
+      setSubmitting(false)
+      await createLead(contactRes.data!.id)
     } catch (err) {
+      setSubmitting(false)
+      if (err instanceof ApiError && err.code === 'DUPLICATE_CONTACT') {
+        setConflict(err.details as DuplicateContactDetails)
+        return
+      }
       const parsed = toFormErrors(err, 'Failed to create lead')
       setError(parsed.message)
       setFieldErrors(parsed.fields)
+    }
+  }
+
+  // Contact already exists (that's why we're here) — skip POST /contacts
+  // entirely and create the lead against the existing contact directly, or
+  // it would just hit the same 409 again. See lib/contact-duplicate-check.ts.
+  async function handleLogAsRepeat() {
+    if (!conflict?.existingLead || !conflict.existingContact.id) return
+    const existingLeadId = conflict.existingLead.id
+    setConflict(null)
+    await createLead(conflict.existingContact.id, { repeatOfLeadId: existingLeadId })
+  }
+
+  async function handleReassignToMe() {
+    if (!conflict?.existingLead || !currentUser) return
+    setReassigning(true)
+    try {
+      await api.put(`/leads/${conflict.existingLead.id}/assign`, { assignedToId: currentUser.id })
+      onCreated(conflict.existingLead.id)
+    } catch (err) {
+      const parsed = toFormErrors(err, 'Failed to reassign lead')
+      setError(parsed.message)
     } finally {
-      setSubmitting(false)
+      setReassigning(false)
+      setConflict(null)
     }
   }
 
@@ -150,6 +231,52 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
           Existing Contact
         </Button>
       </div>
+
+      {conflict && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm">
+          <p className="font-medium text-destructive">
+            {conflict.existingLead
+              ? `Already exists: ${conflict.existingLead.companyName} (${conflict.existingLead.stage})`
+              : 'Contact already exists'}
+          </p>
+          {conflict.existingLead?.assignedTo && (
+            <p className="mt-1 text-muted-foreground">
+              Assigned to {conflict.existingLead.assignedTo.fullName}
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {conflict.actions.includes('view') && conflict.existingLead && (
+              <a
+                href={`/leads/${conflict.existingLead.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+              >
+                View existing lead
+              </a>
+            )}
+            {conflict.actions.includes('logAsRepeat') && conflict.existingLead && (
+              <button
+                type="button"
+                onClick={handleLogAsRepeat}
+                className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+              >
+                Log as repeat enquiry
+              </button>
+            )}
+            {conflict.actions.includes('reassign') && conflict.existingLead && (
+              <button
+                type="button"
+                disabled={reassigning}
+                onClick={handleReassignToMe}
+                className="text-xs font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50"
+              >
+                {reassigning ? 'Reassigning…' : 'Reassign to me'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {mode === 'existing' ? (
         <div className="flex flex-col gap-1.5">
@@ -236,6 +363,17 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
             />
             {fieldErrors.phone && <p className="text-xs text-destructive">{fieldErrors.phone}</p>}
           </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="lead-gst" className="text-sm font-medium">
+              GST Number (optional)
+            </label>
+            <input
+              id="lead-gst"
+              value={gstNumber}
+              onChange={(e) => setGstNumber(e.target.value)}
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
         </div>
 
         {!ignoreDup && dupMatches.length > 0 && (
@@ -302,6 +440,66 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium">Target closing horizon (optional)</label>
+        <select
+          value={closingHorizon}
+          onChange={(e) => setClosingHorizon(e.target.value as (typeof CLOSING_HORIZONS)[number] | '')}
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">Not set</option>
+          {CLOSING_HORIZONS.map((h) => (
+            <option key={h} value={h}>
+              {CLOSING_HORIZON_LABELS[h]}
+            </option>
+          ))}
+        </select>
+        {closingHorizon === 'custom' && (
+          <input
+            type="date"
+            value={targetClosingDate}
+            onChange={(e) => setTargetClosingDate(e.target.value)}
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+          />
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="lead-territory" className="text-sm font-medium">
+            Territory (optional)
+          </label>
+          <input
+            id="lead-territory"
+            value={territory}
+            onChange={(e) => setTerritory(e.target.value)}
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="lead-service-area" className="text-sm font-medium">
+            Service area (optional)
+          </label>
+          <input
+            id="lead-service-area"
+            value={serviceArea}
+            onChange={(e) => setServiceArea(e.target.value)}
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="lead-pincode" className="text-sm font-medium">
+            Pin code (optional)
+          </label>
+          <input
+            id="lead-pincode"
+            value={pinCode}
+            onChange={(e) => setPinCode(e.target.value)}
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">

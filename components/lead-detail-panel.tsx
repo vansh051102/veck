@@ -15,6 +15,7 @@ import { LeadStageControl } from '@/components/lead-stage-control'
 import { LeadActivityTab, type LeadActivity } from '@/components/log-activity-forms'
 import { LeadDocuments } from '@/components/lead-documents'
 import { LeadTimeline, type TimelineEvent } from '@/components/lead-timeline'
+import { Lead360Modal } from '@/components/leads/lead-360-modal'
 
 export interface LeadDetailData {
   id: string
@@ -30,7 +31,7 @@ export interface LeadDetailData {
   createdAt: string
   updatedAt?: string
   assignedToId: string | null
-  contact: { firstName: string; lastName: string; email: string; phone: string } | null
+  contact: { id: string; firstName: string; lastName: string; email: string; phone: string } | null
   assignedTo: { fullName: string; email: string } | null
   createdBy: { fullName: string } | null
   // Quote Sent details
@@ -104,6 +105,7 @@ export function LeadDetailPanel({
   const [requirement, setRequirement] = useState(lead.requirement ?? '')
   const [savingReq, setSavingReq] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [show360, setShow360] = useState(false)
 
   const calls = useMemo(
     () =>
@@ -244,11 +246,22 @@ export function LeadDetailPanel({
                 {lead.contact.email}
               </a>
             )}
+            <button
+              type="button"
+              onClick={() => setShow360(true)}
+              className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+            >
+              View 360°
+            </button>
           </>
         ) : (
           <span className="text-muted-foreground">No contact linked</span>
         )}
       </div>
+
+      {show360 && lead.contact && (
+        <Lead360Modal contactId={lead.contact.id} onClose={() => setShow360(false)} />
+      )}
 
       {/* Lead / Quotation toggle (fixed) */}
       <div className="flex flex-none gap-1 border-b border-border p-2">

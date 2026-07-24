@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { formatDate } from '@/lib/utils'
 import type { DashboardStats } from './types'
 
 const SALES_STAGES = [
@@ -44,6 +45,26 @@ export function SalesPipelineSection({ stats }: { stats: DashboardStats }) {
             </span>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Close Rate</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <span className="text-2xl font-semibold">
+              {stats.closeRate !== null && stats.closeRate !== undefined ? `${stats.closeRate}%` : '—'}
+            </span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Calls / Messages Today</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <span className="text-2xl font-semibold">
+              {stats.callsToday ?? 0} / {stats.messagesToday ?? 0}
+            </span>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -68,6 +89,32 @@ export function SalesPipelineSection({ stats }: { stats: DashboardStats }) {
             <Badge variant="default">0–7 days: {aging['0-7d']}</Badge>
             <Badge variant="warning">8–30 days: {aging['8-30d']}</Badge>
             <Badge variant="destructive">30+ days: {aging['30d+']}</Badge>
+          </CardContent>
+        </Card>
+      )}
+
+      {stats.overdueFollowUps && stats.overdueFollowUps.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Overdue follow-ups</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {stats.overdueFollowUps.map((f) => (
+                <div
+                  key={f.id}
+                  className="flex items-center justify-between gap-4 rounded-md border border-border p-3 text-sm"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium">{f.title}</span>
+                    <span className="text-xs text-muted-foreground">{f.lead?.companyName ?? 'Unknown lead'}</span>
+                  </div>
+                  <span className="text-xs text-destructive">
+                    {f.scheduledFor ? formatDate(new Date(f.scheduledFor)) : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

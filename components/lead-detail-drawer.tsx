@@ -26,6 +26,7 @@ function seedFromRow(row: LeadRow): LeadDetailData {
     assignedToId: row.assignedToId ?? row.assignedTo?.id ?? null,
     contact: row.contact
       ? {
+          id: row.contact.id,
           firstName: row.contact.firstName,
           lastName: row.contact.lastName,
           email: row.contact.email,

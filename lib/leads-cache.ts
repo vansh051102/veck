@@ -8,6 +8,29 @@ export interface LeadListResult {
   fetchedAt: number
 }
 
+/** Phase C advanced filters — kept as a single sub-object so the cache key
+ *  and URLSearchParams builders don't need a new line per field. */
+export interface AdvancedLeadFilters {
+  quotationValueMin?: string
+  quotationValueMax?: string
+  orderValueMin?: string
+  orderValueMax?: string
+  marginMin?: string
+  marginMax?: string
+  quotationNumber?: string
+  closingHorizon?: string
+  closingFrom?: string
+  closingTo?: string
+  territory?: string
+  serviceArea?: string
+  pinCode?: string
+  callsCountMin?: string
+  messagesCountMin?: string
+  inactivityDays?: string
+}
+
+export const EMPTY_ADVANCED_FILTERS: AdvancedLeadFilters = {}
+
 export interface LeadListQuery {
   stage?: string
   contactOutcome?: string
@@ -21,6 +44,7 @@ export interface LeadListQuery {
   sortBy?: string
   sortDir?: string
   view?: 'list' | 'kanban'
+  advanced?: AdvancedLeadFilters
 }
 
 type Listener = () => void
@@ -30,6 +54,7 @@ const inflight = new Map<string, Promise<LeadListResult>>()
 const listeners = new Set<Listener>()
 
 export function leadCacheKey(q: LeadListQuery): string {
+  const a = q.advanced ?? EMPTY_ADVANCED_FILTERS
   return [
     q.stage ?? '',
     q.contactOutcome ?? '',
@@ -43,6 +68,10 @@ export function leadCacheKey(q: LeadListQuery): string {
     q.sortBy ?? 'createdAt',
     q.sortDir ?? 'desc',
     q.view ?? 'list',
+    Object.keys(a)
+      .sort()
+      .map((k) => `${k}=${a[k as keyof AdvancedLeadFilters] ?? ''}`)
+      .join(','),
   ].join('|')
 }
 
@@ -83,6 +112,11 @@ function buildParams(q: LeadListQuery): URLSearchParams {
   params.set('limit', q.view === 'kanban' ? '100' : String(q.pageSize ?? 50))
   params.set('sortBy', q.sortBy ?? 'createdAt')
   params.set('sortDir', q.sortDir ?? 'desc')
+  if (q.advanced) {
+    for (const [key, value] of Object.entries(q.advanced)) {
+      if (value) params.set(key, value)
+    }
+  }
   return params
 }
 

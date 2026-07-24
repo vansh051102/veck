@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { CreateLeadSchema, LEAD_STAGES, LEAD_PRIORITIES } from '@/lib/validation'
-import { AppError } from '@/lib/errors'
+import { AppError, DuplicateContactError } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import {
   successResponse,
@@ -11,13 +11,14 @@ import {
   withErrorHandler,
   NotFoundError,
   ValidationError,
-  ConflictError,
   InternalServerError,
   getPaginationParams,
 } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
-import { buildOwnershipFilterAsync, PERMISSIONS } from '@/lib/rbac'
+import { buildOwnershipFilterAsync, canAccessLead, PERMISSIONS } from '@/lib/rbac'
+import { parseAdvancedLeadFilters, buildAdvancedLeadWhere, ADVANCED_LEAD_SORT_FIELDS } from '@/lib/lead-filters'
+import { resolveMaskedFields, applyLeadFieldMask } from '@/lib/lead-serializer'
 
 // POST /api/v1/leads - Create a lead (Step 1 of the workflow)
 export const POST = withErrorHandler(async (req) => {
@@ -40,6 +41,46 @@ export const POST = withErrorHandler(async (req) => {
   })
   if (!contact) throw new NotFoundError('Contact')
 
+  // Frontend sets sourceDetails.repeatOf when the user chose "log as repeat
+  // enquiry" on a duplicate banner — intentionally creates a second lead for
+  // the same contact instead of being blocked by the open-lead check.
+  const repeatOfLeadId = (input.sourceDetails as { repeatOf?: string } | undefined)?.repeatOf
+
+  // Builds the same rich 409 whether the open-lead duplicate was caught by
+  // the advisory pre-check inside createLeadWithDefaults, or (race case)
+  // slipped past it and only surfaced as a P2002 from the DB — re-runs the
+  // lookup so both paths give the user the same view/logAsRepeat/reassign
+  // banner instead of the second path falling back to a raw DB error.
+  async function buildOpenLeadDuplicateError(existingLead: {
+    id: string
+    companyName: string
+    stage: string
+    assignedTo: { fullName: string } | null
+  }) {
+    const canView = await canAccessLead(ctx.userId, ctx.role, existingLead.id)
+    if (!canView) {
+      return new DuplicateContactError(
+        'This contact already has an open lead under another agent. Contact admin to reassign.',
+        {
+          reason: 'open_lead',
+          existingContact: { id: input.contactId, firstName: '', lastName: '' },
+          existingLead: null,
+          actions: ['reassign'],
+        }
+      )
+    }
+    return new DuplicateContactError(
+      `This contact already has an open lead: ${existingLead.companyName} ` +
+        `(${existingLead.stage}), assigned to ${existingLead.assignedTo?.fullName ?? 'unassigned'}.`,
+      {
+        reason: 'open_lead',
+        existingContact: { id: input.contactId, firstName: '', lastName: '' },
+        existingLead,
+        actions: ['view', 'logAsRepeat', 'reassign'],
+      }
+    )
+  }
+
   // createLeadWithDefaults's transaction body calls pickAssignee/startSlaClock/
   // createSopChecklistsForStage — a bug or missing-config edge case in any of
   // those throws a plain, unnamed Error that would otherwise fall through
@@ -59,18 +100,34 @@ export const POST = withErrorHandler(async (req) => {
       tags: input.tags,
       createdById: ctx.userId,
       creatorRole: ctx.role,
+      allowRepeat: Boolean(repeatOfLeadId),
+      closingHorizon: input.closingHorizon,
+      targetClosingDate: input.targetClosingDate,
+      territory: input.territory,
+      serviceArea: input.serviceArea,
+      pinCode: input.pinCode,
     })
   } catch (err) {
-    if (err instanceof AppError || err instanceof Prisma.PrismaClientKnownRequestError) throw err
+    if (err instanceof AppError) throw err
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      // Advisory pre-check was raced — re-run the same open-lead lookup used
+      // inside createLeadWithDefaults to build the same rich response.
+      const existingLead = await prisma.lead.findFirst({
+        where: {
+          orgId: ctx.orgId,
+          contactId: input.contactId,
+          stage: { notIn: ['Order Confirmed', 'Order Closed', 'Deal Lost', 'Disqualified', 'Closed Won'] },
+        },
+        select: { id: true, companyName: true, stage: true, assignedTo: { select: { fullName: true } } },
+      })
+      throw existingLead ? await buildOpenLeadDuplicateError(existingLead) : err
+    }
     logger.error({ err }, 'createLeadWithDefaults failed unexpectedly')
     throw new InternalServerError('Could not create lead — please retry')
   }
 
   if (result.duplicate) {
-    throw new ConflictError(
-      `This lead is already assigned to ${result.existingLead.assignedTo?.fullName ?? 'someone'} ` +
-      `(${result.existingLead.stage}). Lead ID: ${result.existingLead.id}`
-    )
+    throw await buildOpenLeadDuplicateError(result.existingLead)
   }
 
   await logAudit(ctx.orgId, ctx.userId, 'CREATE', 'Lead', result.lead.id, result.lead.companyName)
@@ -120,7 +177,15 @@ export const GET = withErrorHandler(async (req) => {
   const sortBy = url.searchParams.get('sortBy') || 'createdAt'
   const sortDir = url.searchParams.get('sortDir') === 'asc' ? 'asc' : ('desc' as const)
 
-  const SORTABLE = ['createdAt', 'companyName', 'priority', 'stage', 'lastActivityAt', 'slaDeadline']
+  const SORTABLE = [
+    'createdAt',
+    'companyName',
+    'priority',
+    'stage',
+    'lastActivityAt',
+    'slaDeadline',
+    ...ADVANCED_LEAD_SORT_FIELDS,
+  ]
   if (!SORTABLE.includes(sortBy)) {
     throw new ValidationError(`Invalid sortBy: ${sortBy}. Allowed: ${SORTABLE.join(', ')}`)
   }
@@ -148,6 +213,15 @@ export const GET = withErrorHandler(async (req) => {
     'leads'
   )
 
+  const orgSettings = await prisma.settings.findUnique({
+    where: { orgId: ctx.orgId },
+    select: { timezone: true },
+  })
+  const advancedFilters = buildAdvancedLeadWhere(
+    parseAdvancedLeadFilters(url.searchParams),
+    orgSettings?.timezone ?? 'Asia/Kolkata'
+  )
+
   const where = {
     orgId: ctx.orgId,
     ...ownershipFilter,
@@ -171,6 +245,7 @@ export const GET = withErrorHandler(async (req) => {
         { notes: { contains: search, mode: 'insensitive' as const } },
       ],
     }),
+    ...advancedFilters,
   }
 
   const [leads, total] = await Promise.all([
@@ -225,7 +300,12 @@ export const GET = withErrorHandler(async (req) => {
     }
   })
 
-  return paginatedResponse(enriched, {
+  const maskedFields = await resolveMaskedFields(ctx.orgId, ctx.userId, ctx.role)
+  const masked = maskedFields.length
+    ? enriched.map((lead) => applyLeadFieldMask(lead, maskedFields))
+    : enriched
+
+  return paginatedResponse(masked, {
     page,
     limit,
     total,

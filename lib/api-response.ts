@@ -13,6 +13,8 @@ export {
   ConflictError,
   RateLimitError,
   InternalServerError,
+  DuplicateContactError,
+  StaleVersionError,
 } from './errors'
 
 // ============================================================================

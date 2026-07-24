@@ -24,6 +24,7 @@ const UpdateRoleSchema = z.object({
   parentRoleId: z.string().uuid().nullable().optional(),
   maxExportLimitDaily: z.number().int().min(0).optional(),
   maskPiiData: z.boolean().optional(),
+  maskedFields: z.array(z.string()).optional(),
 })
 
 // GET /api/v1/roles/:id - Get a single role
@@ -72,6 +73,7 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
       ...(parsed.data.parentRoleId !== undefined && { parentRoleId: parsed.data.parentRoleId }),
       ...(parsed.data.maxExportLimitDaily !== undefined && { maxExportLimitDaily: parsed.data.maxExportLimitDaily }),
       ...(parsed.data.maskPiiData !== undefined && { maskPiiData: parsed.data.maskPiiData }),
+      ...(parsed.data.maskedFields !== undefined && { maskedFields: parsed.data.maskedFields }),
     },
   })
 

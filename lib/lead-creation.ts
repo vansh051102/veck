@@ -19,6 +19,14 @@ export interface CreateLeadInput {
   assignedToId?: string
   /** Creator role — selects marketing vs sales New Lead SOP checklists. */
   creatorRole?: string
+  /** Skip the open-lead-per-contact duplicate block — used for "log as repeat
+   *  enquiry", where a second lead for the same contact is intentional. */
+  allowRepeat?: boolean
+  closingHorizon?: string
+  targetClosingDate?: Date
+  territory?: string
+  serviceArea?: string
+  pinCode?: string
 }
 
 export type CreateLeadResult =
@@ -49,26 +57,29 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
 
   return prisma.$transaction(async (tx) => {
     // Duplicate check: if this contact already has an open lead in the org,
-    // return the existing one instead of creating a second.
-    const existingLead = await tx.lead.findFirst({
-      where: {
-        orgId: input.orgId,
-        contactId: input.contactId,
-        stage: {
-          notIn: ['Order Confirmed', 'Order Closed', 'Deal Lost', 'Disqualified', 'Closed Won'],
+    // return the existing one instead of creating a second — unless the
+    // caller explicitly opted into "log as repeat enquiry" (allowRepeat).
+    if (!input.allowRepeat) {
+      const existingLead = await tx.lead.findFirst({
+        where: {
+          orgId: input.orgId,
+          contactId: input.contactId,
+          stage: {
+            notIn: ['Order Confirmed', 'Order Closed', 'Deal Lost', 'Disqualified', 'Closed Won'],
+          },
         },
-      },
-      select: {
-        id: true,
-        orgId: true,
-        companyName: true,
-        stage: true,
-        assignedTo: { select: { fullName: true } },
-      },
-    })
+        select: {
+          id: true,
+          orgId: true,
+          companyName: true,
+          stage: true,
+          assignedTo: { select: { fullName: true } },
+        },
+      })
 
-    if (existingLead) {
-      return { duplicate: true, existingLead }
+      if (existingLead) {
+        return { duplicate: true, existingLead }
+      }
     }
 
     // Explicit assignee wins; otherwise fall back to auto-assignment
@@ -102,6 +113,11 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
         sourceDetails: input.sourceDetails,
         externalId: input.externalId,
         tags: input.tags || [],
+        closingHorizon: input.closingHorizon,
+        targetClosingDate: input.targetClosingDate,
+        territory: input.territory,
+        serviceArea: input.serviceArea,
+        pinCode: input.pinCode,
         stage,
         stageChangedAt: now,
         slaCreatedAt: now,
